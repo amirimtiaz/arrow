@@ -7,7 +7,7 @@
  */
 import clsx from 'clsx';
 import { Bot, ChevronRight, Loader2, Send, Sparkles, X } from 'lucide-react';
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import type { AgentRun } from '@/module_bindings/ops/types';
 import { useAgentService } from '@/lib/ops/agent';
 import { useMyProfile, useOps, useCurrentOrg } from '@/lib/ops/client';
@@ -91,7 +91,8 @@ export function AskArrow() {
         </button>
       </header>
 
-      <div ref={scrollRef} className="scroll-thin min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+      {/* Stable gutter: a scrollbar appearing must not resize (and re-layout) the charts inside. */}
+      <div ref={scrollRef} className="scroll-thin min-h-0 flex-1 space-y-4 overflow-y-auto p-4 [scrollbar-gutter:stable]">
         {runs.length === 0 && (
           <div className="rounded-xl border border-line bg-panel p-3 text-[12.5px] text-muted">
             Ask about lanes, shipments, vendors or risk in <b className="text-fg">{org?.name}</b>. Arrow plans, calls tools over live
@@ -152,10 +153,17 @@ function Exchange({ run }: { run: AgentRun }) {
   const toolSteps = steps.filter((s) => s.kind === 'tool_call');
   const working = run.status === 'queued' || run.status === 'running';
   // Dashboards the agent built with build_dashboard (numbers computed by the tool, not the model).
-  const dashboards = toolSteps
-    .filter((s) => s.tool === 'build_dashboard' && s.outputJson)
-    .map((s) => ({ id: String(s.id), data: parseDashboard(s.outputJson) }))
-    .filter((d): d is { id: string; data: DashboardData } => d.data !== null);
+  // Parsed once per step (a step's output never changes), so new rows elsewhere don't redraw the charts.
+  const dashboardSteps = toolSteps.filter((s) => s.tool === 'build_dashboard' && s.outputJson);
+  const dashboardKey = dashboardSteps.map((s) => String(s.id)).join(',');
+  const dashboards = useMemo(
+    () =>
+      dashboardSteps
+        .map((s) => ({ id: String(s.id), data: parseDashboard(s.outputJson) }))
+        .filter((d): d is { id: string; data: DashboardData } => d.data !== null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [dashboardKey]
+  );
 
   return (
     <div className="space-y-2">

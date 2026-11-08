@@ -562,9 +562,17 @@ export const buildDashboard = tool({
   name: 'build_dashboard',
   description:
     'Build a visual dashboard (charts the UI renders, downloadable as PNG images and CSV for Excel, Google Sheets, Tableau or Power BI). ' +
-    'Pick 2-4 charts. Each chart groups a metric by a dimension. Use it whenever the user asks for a dashboard, chart, graph, visualization, export, report, Excel, CSV, Tableau or Power BI.',
+    'Each chart groups a metric by a dimension. Choose charts that answer exactly what the user asked: use the metric and grouping they named ("value at risk by lane" = metric value_at_risk_usd, group_by lane) and set filter when they narrow it (e.g. only disrupted lanes, only sea freight, only delayed shipments). ' +
+    'Use it whenever the user asks for a dashboard, chart, graph, visualization, export, report, Excel, CSV, Tableau or Power BI.',
   schema: z.object({
     title: z.string().min(3).max(80),
+    filter: z
+      .object({
+        route_status: z.array(z.enum(['healthy', 'at_risk', 'disrupted', 'rerouted'])).optional(),
+        mode: z.array(z.enum(['sea', 'air', 'rail', 'truck'])).optional(),
+        shipment_status: z.array(z.enum(['in_transit', 'delayed', 'held', 'rerouted'])).optional(),
+      })
+      .optional(),
     charts: z
       .array(
         z.object({
@@ -578,10 +586,17 @@ export const buildDashboard = tool({
       .min(1)
       .max(4),
   }),
-  run: ({ title, charts }, ctx) => {
-    const routes = orgRoutes(ctx).filter((r) => r.status !== 'standby');
+  run: ({ title, filter, charts }, ctx) => {
+    const routes = orgRoutes(ctx).filter(
+      (r) =>
+        r.status !== 'standby' &&
+        (!filter?.route_status?.length || (filter.route_status as string[]).includes(r.status)) &&
+        (!filter?.mode?.length || (filter.mode as string[]).includes(r.mode))
+    );
     const routeById = new Map(routes.map((r) => [r.id, r]));
-    const shipments = orgShipments(ctx).filter((s) => routeById.has(s.routeId));
+    const shipments = orgShipments(ctx).filter(
+      (s) => routeById.has(s.routeId) && (!filter?.shipment_status?.length || (filter.shipment_status as string[]).includes(s.status))
+    );
     const nodeName = (id: number) => ctx.ops.db.node.id.find(id);
     const atRisk = (s: (typeof shipments)[number]) => {
       const r = routeById.get(s.routeId)!;
@@ -645,7 +660,7 @@ export const buildDashboard = tool({
       { label: 'Lanes disrupted', value: routes.filter((r) => r.status === 'disrupted').length, format: 'number' },
     ];
     return {
-      result: { title, generated_at: new Date().toISOString(), kpis, charts: built },
+      result: { title, generated_at: new Date().toISOString(), filter: filter ?? null, kpis, charts: built },
       summary: `Built dashboard "${title}" with ${built.length} chart${built.length === 1 ? '' : 's'}`,
     };
   },

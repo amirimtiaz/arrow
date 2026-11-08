@@ -195,13 +195,27 @@ export function Dialog({
   dismissible?: boolean;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
+  // Callers often pass a new onClose every render; keep the latest in a ref so typing in the dialog never re-runs
+  // the open effect (which used to pull focus out of the input after every keystroke).
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  // Focus once when the dialog opens: the field marked autoFocus if there is one, else the panel.
   useEffect(() => {
     if (!open) return;
-    panelRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => dismissible && e.key === 'Escape' && onClose();
+    const panel = panelRef.current;
+    if (!panel || panel.contains(document.activeElement)) return; // React's autoFocus already put focus inside
+    (panel.querySelector<HTMLElement>('[data-autofocus]') ?? panel).focus();
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || !dismissible) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onCloseRef.current();
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [open, onClose, dismissible]);
+  }, [open, dismissible]);
 
   if (!open) return null;
   return (

@@ -117,7 +117,7 @@ An employee asked a question. Answer it using tools over live operational data.
 - Use get_network_overview, list_routes, list_shipments, query_route_history and check_vendor_risk as needed.
 - You cannot reroute or change state yourself. If action is warranted, say that the Silk Road agents propose responses for an operations manager to approve.
 - Only call post_briefing if the user asks you to brief or notify people.
-- If the user asks for a dashboard, chart, graph, visualization, export, report, Excel, CSV, Google Sheets, Tableau or Power BI: call build_dashboard once with 2-4 well-chosen charts (mix bar, pie and table). Arrow renders it as real charts with PNG and CSV downloads that open in Excel, Google Sheets, Tableau and Power BI. Then reply in 2-4 sentences with the key takeaways, citing numbers from the tool output.
+- If the user asks for a dashboard, chart, graph, visualization, export, report, Excel, CSV, Google Sheets, Tableau or Power BI: call build_dashboard once. Make it answer exactly what they asked: if they name a metric or grouping ("value at risk by lane"), the first chart must be exactly that; if they narrow it ("only disrupted lanes", "sea freight"), set filter; add at most 2 supporting charts that help explain it. Title the dashboard and charts in their words. Arrow renders it as real charts with PNG and CSV downloads that open in Excel, Google Sheets, Tableau and Power BI. Then reply in 2-4 sentences with the key takeaways, citing numbers from the tool output.
 - Finish with your answer as plain text (no tool call): at most 170 words, short bullets where helpful.
 
 ${SHARED_RULES}`;

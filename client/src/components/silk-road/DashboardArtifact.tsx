@@ -7,7 +7,7 @@
  */
 import clsx from 'clsx';
 import { Download, FileSpreadsheet, ImageDown, LayoutDashboard, Maximize2 } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { memo, useRef, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Dialog } from '@/components/ui/primitives';
 
@@ -21,6 +21,7 @@ export interface DashboardChart {
 export interface DashboardData {
   title: string;
   generated_at: string;
+  filter?: { route_status?: string[]; mode?: string[]; shipment_status?: string[] } | null;
   kpis: { label: string; value: number; format: 'number' | 'usd' | 'pct' }[];
   charts: DashboardChart[];
 }
@@ -168,9 +169,18 @@ function ChartBody({ chart, height }: { chart: DashboardChart; height: number })
   }
   if (chart.type === 'pie') {
     return (
-      <ResponsiveContainer width="100%" height={height}>
+      <ResponsiveContainer width="100%" height={height} debounce={120}>
         <PieChart>
-          <Pie data={chart.rows} dataKey="value" nameKey="label" innerRadius="48%" outerRadius="78%" paddingAngle={2} stroke="none">
+          <Pie
+            data={chart.rows}
+            dataKey="value"
+            nameKey="label"
+            innerRadius="48%"
+            outerRadius="78%"
+            paddingAngle={2}
+            stroke="none"
+            isAnimationActive={false}
+          >
             {chart.rows.map((r, i) => (
               <Cell key={r.label} fill={colorFor(r.label, i)} />
             ))}
@@ -183,13 +193,13 @@ function ChartBody({ chart, height }: { chart: DashboardChart; height: number })
   }
   const labelWidth = Math.min(180, Math.max(60, ...chart.rows.map((r) => r.label.length * 6.4 + 8)));
   return (
-    <ResponsiveContainer width="100%" height={Math.max(height, chart.rows.length * 24 + 30)}>
+    <ResponsiveContainer width="100%" height={Math.max(height, chart.rows.length * 24 + 30)} debounce={120}>
       <BarChart data={chart.rows} layout="vertical" margin={{ top: 4, right: 12, bottom: 4, left: 4 }}>
         <CartesianGrid horizontal={false} stroke="#94a3b833" />
         <XAxis type="number" tick={TICK} tickFormatter={(v) => short(Number(v), chart.metric)} stroke="#94a3b855" />
         <YAxis type="category" dataKey="label" tick={TICK} width={labelWidth} stroke="#94a3b855" interval={0} />
         <Tooltip formatter={(v) => short(Number(v), chart.metric)} cursor={{ fill: '#94a3b822' }} />
-        <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+        <Bar dataKey="value" radius={[0, 4, 4, 0]} isAnimationActive={false}>
           {chart.rows.map((r, i) => (
             <Cell key={r.label} fill={colorFor(r.label, i)} />
           ))}
@@ -245,7 +255,8 @@ function DashboardBody({ data, wide }: { data: DashboardData; wide: boolean }) {
   );
 }
 
-export function DashboardArtifact({ data }: { data: DashboardData }) {
+/** Memoised: Ask Arrow re-renders whenever any agent step arrives, and a re-render must not redraw the charts. */
+export const DashboardArtifact = memo(function DashboardArtifact({ data }: { data: DashboardData }) {
   const [expanded, setExpanded] = useState(false);
   const actions = (
     <div className="flex flex-wrap gap-1.5">
@@ -280,6 +291,18 @@ export function DashboardArtifact({ data }: { data: DashboardData }) {
       <p className="mb-2 text-[10.5px] text-faint">
         Charts chosen by Nemotron · numbers computed by Arrow from live data · {new Date(data.generated_at).toLocaleTimeString()}
       </p>
+      {data.filter && Object.values(data.filter).some((v) => v && v.length > 0) && (
+        <p className="mb-2 flex flex-wrap gap-1 text-[10.5px]">
+          <span className="text-muted">Filtered to</span>
+          {Object.values(data.filter)
+            .flatMap((v) => v ?? [])
+            .map((v) => (
+              <span key={v} className="rounded-md border border-accent/40 bg-accent-soft px-1.5 font-semibold text-accent">
+                {v.replace(/_/g, ' ')}
+              </span>
+            ))}
+        </p>
+      )}
       <DashboardBody data={data} wide={false} />
       <div className="mt-2.5">{actions}</div>
 
@@ -297,4 +320,4 @@ export function DashboardArtifact({ data }: { data: DashboardData }) {
       </Dialog>
     </div>
   );
-}
+});
