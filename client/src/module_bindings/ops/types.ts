@@ -73,6 +73,34 @@ export const AgentStep = __t.object("AgentStep", {
 });
 export type AgentStep = __Infer<typeof AgentStep>;
 
+export const Branch = __t.object("Branch", {
+  id: __t.u64(),
+  orgId: __t.u32(),
+  name: __t.string(),
+  department: __t.string(),
+  country: __t.string(),
+  state: __t.string(),
+  city: __t.string(),
+  isHq: __t.bool(),
+  createdByName: __t.string(),
+  createdAt: __t.timestamp(),
+});
+export type Branch = __Infer<typeof Branch>;
+
+export const BranchMessage = __t.object("BranchMessage", {
+  id: __t.u64(),
+  orgId: __t.u32(),
+  fromBranchId: __t.u64(),
+  toBranchId: __t.u64(),
+  kind: __t.string(),
+  subject: __t.string(),
+  body: __t.string(),
+  metricsJson: __t.string(),
+  sentByName: __t.string(),
+  sentAt: __t.timestamp(),
+});
+export type BranchMessage = __Infer<typeof BranchMessage>;
+
 export const Disruption = __t.object("Disruption", {
   id: __t.u64(),
   orgId: __t.u32(),

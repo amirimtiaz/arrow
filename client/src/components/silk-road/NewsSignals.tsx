@@ -9,14 +9,16 @@
  * agents investigate) or dismiss. News is real; the network is simulated.
  */
 import clsx from 'clsx';
-import { ChevronDown, ExternalLink, Loader2, Newspaper, RefreshCw, Siren, X } from 'lucide-react';
+import { ExternalLink, Loader2, Newspaper, RefreshCw, Siren, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { NewsSignal } from '@/module_bindings/ops/types';
 import { safeJson, timeAgo, tsToDate, tsToMs } from '@/lib/format';
 import { analyzeWithGrok, fetchArticles, GROK_MODEL, isPuterSignedIn, watchPlaces } from '@/lib/grok-scout';
 import { useCurrentOrg, useMyProfile, useOps } from '@/lib/ops/client';
 import { useLatestNewsScan, useNetwork, useNewsSignals } from '@/lib/ops/hooks';
+import { useSettings } from '@/lib/settings';
 import { errorMessage, useToast } from '@/components/ui/toast';
+import { MapCard } from './MapCard';
 import { useSilkRoad } from './SilkRoadState';
 
 const AUTO_SCAN_MS = 30 * 60_000;
@@ -39,7 +41,7 @@ function domain(url: string): string {
 type Stage = 'idle' | 'reading' | 'thinking' | 'saving';
 
 export function NewsSignals() {
-  const [open, setOpen] = useState(true);
+  const { updateMap } = useSettings();
   const signals = useNewsSignals().filter((s) => s.status !== 'dismissed');
   const scan = useLatestNewsScan();
   const network = useNetwork();
@@ -67,7 +69,11 @@ export function NewsSignals() {
         await conn.reducers.submitNewsScan({ orgId: org.id, trigger, model: MODEL_LABEL, articleCount, signals: found, error: '' });
         setSignedIn(await isPuterSignedIn());
         if (trigger === 'manual') {
-          toast({ title: `Grok reviewed ${articleCount} headlines`, description: `${found.length} relevant signals found.`, tone: 'success' });
+          toast({
+            title: `Grok reviewed ${articleCount} headlines`,
+            description: `${found.length} relevant signals found.`,
+            tone: 'success',
+          });
         }
       } catch (err) {
         const message = errorMessage(err) || 'Scan failed';
@@ -116,58 +122,52 @@ export function NewsSignals() {
   };
 
   return (
-    <div className="pointer-events-auto w-[260px] rounded-xl border border-line bg-panel/95 shadow-panel backdrop-blur">
-      <div className="flex items-center justify-between gap-2 px-3 pt-2.5">
-        <button
-          type="button"
-          onClick={() => setOpen(!open)}
-          aria-expanded={open}
-          className="flex items-center gap-1.5 text-sm font-bold text-fg"
-        >
-          <ChevronDown className={clsx('size-3.5 transition-transform', !open && '-rotate-90')} aria-hidden />
-          <Newspaper className="size-4 text-violet" aria-hidden />
-          Live news
-        </button>
-        <span className="rounded-md bg-violet-soft px-1.5 py-0.5 text-[10px] font-bold text-violet">Grok bot</span>
-      </div>
-
-      {open && (
-        <div className="px-3 pt-1.5 pb-3">
-          <div className="flex items-center justify-between gap-2 text-[11px] text-muted">
-            <span className="min-w-0 truncate" title={status[stage]}>
-              {status[stage]}
-            </span>
-            <button
-              type="button"
-              onClick={() => runScan('manual')}
-              disabled={!canScan || busy}
-              title={signedIn ? 'Scan real headlines with Grok now' : 'Scan with Grok (free via Puter: sign in to Puter the first time)'}
-              className="flex shrink-0 items-center gap-1 rounded-md border border-line px-1.5 py-0.5 font-semibold text-fg hover:bg-panel-hover disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {busy ? <Loader2 className="size-3 animate-spin" aria-hidden /> : <RefreshCw className="size-3" aria-hidden />}
-              Scan
-            </button>
-          </div>
-
-          {signals.length === 0 ? (
-            <p className="mt-2 rounded-lg border border-dashed border-line p-2 text-[11.5px] text-faint">
-              No live signals. Grok reads this week&apos;s real headlines about your ports, hubs and canals and flags storms, strikes,
-              closures and cyberattacks.
-            </p>
-          ) : (
-            <ul className="scroll-thin mt-2 max-h-[190px] space-y-1.5 overflow-y-auto pr-0.5">
-              {signals.slice(0, 6).map((s) => (
-                <SignalRow key={String(s.id)} signal={s} />
-              ))}
-            </ul>
-          )}
-          <p className="mt-1.5 text-[10px] text-faint">
-            Grok 4.7 via Puter (free) · real headlines · {signedIn ? 'auto-scans every 30 min' : 'click Scan to sign in to Puter'} ·
-            network data simulated
-          </p>
+    <MapCard
+      id="news"
+      title="Live news"
+      icon={Newspaper}
+      iconClassName="text-violet"
+      width={260}
+      anchor={{ right: 16, bottom: 16 }}
+      badge={<span className="shrink-0 rounded-md bg-violet-soft px-1.5 py-0.5 text-[10px] font-bold text-violet">Grok bot</span>}
+      onClose={() => updateMap({ showNews: false })}
+      closeTitle="Hide live news (turn it back on in Settings › Map)"
+    >
+      <div className="px-3 pt-2 pb-3">
+        <div className="flex items-center justify-between gap-2 text-[11px] text-muted">
+          <span className="min-w-0 truncate" title={status[stage]}>
+            {status[stage]}
+          </span>
+          <button
+            type="button"
+            onClick={() => runScan('manual')}
+            disabled={!canScan || busy}
+            title={signedIn ? 'Scan real headlines with Grok now' : 'Scan with Grok (free via Puter: sign in to Puter the first time)'}
+            className="flex shrink-0 items-center gap-1 rounded-md border border-line px-1.5 py-0.5 font-semibold text-fg hover:bg-panel-hover disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {busy ? <Loader2 className="size-3 animate-spin" aria-hidden /> : <RefreshCw className="size-3" aria-hidden />}
+            Scan
+          </button>
         </div>
-      )}
-    </div>
+
+        {signals.length === 0 ? (
+          <p className="mt-2 rounded-lg border border-dashed border-line p-2 text-[11.5px] text-faint">
+            No live signals. Grok reads this week&apos;s real headlines about your ports, hubs and canals and flags storms, strikes,
+            closures and cyberattacks.
+          </p>
+        ) : (
+          <ul className="scroll-thin mt-2 max-h-[190px] space-y-1.5 overflow-y-auto pr-0.5">
+            {signals.slice(0, 6).map((s) => (
+              <SignalRow key={String(s.id)} signal={s} />
+            ))}
+          </ul>
+        )}
+        <p className="mt-1.5 text-[10px] text-faint">
+          Grok 4.7 via Puter (free) · real headlines · {signedIn ? 'auto-scans every 30 min' : 'click Scan to sign in to Puter'} · network
+          data simulated
+        </p>
+      </div>
+    </MapCard>
   );
 }
 
@@ -209,7 +209,13 @@ function SignalRow({ signal }: { signal: NewsSignal }) {
       {sources.length > 0 && (
         <p className="mt-1 flex flex-wrap gap-x-2 text-[10.5px]">
           {sources.slice(0, 3).map((url) => (
-            <a key={url} href={url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-0.5 text-accent hover:underline">
+            <a
+              key={url}
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-0.5 text-accent hover:underline"
+            >
               {domain(url) === 'news.google.com' ? 'Read article' : domain(url)}
               <ExternalLink className="size-2.5" aria-hidden />
             </a>
@@ -231,7 +237,11 @@ function SignalRow({ signal }: { signal: NewsSignal }) {
               type="button"
               disabled={busy || signal.routeIds.length === 0}
               onClick={() => act(true)}
-              title={signal.routeIds.length === 0 ? 'This signal is not mapped to any of your lanes' : 'Open a disruption; the Nemotron agents investigate'}
+              title={
+                signal.routeIds.length === 0
+                  ? 'This signal is not mapped to any of your lanes'
+                  : 'Open a disruption; the Nemotron agents investigate'
+              }
               className="flex flex-1 items-center justify-center gap-1 rounded-md bg-accent px-2 py-1 text-[11px] font-semibold text-white hover:bg-accent-strong disabled:opacity-50"
             >
               <Siren className="size-3" aria-hidden />

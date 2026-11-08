@@ -37,6 +37,9 @@ const opsClient = createLiveClient<DbConnection>({
     'securityEvent',
     'newsSignal',
     'newsScan',
+    // Communications tab. Streamed by their own subscription in lib/ops/comms.tsx, not the main one.
+    'branch',
+    'branchMessage',
   ],
 });
 

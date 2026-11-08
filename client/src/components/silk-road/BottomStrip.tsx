@@ -1,112 +1,17 @@
 'use client';
 
 import clsx from 'clsx';
-import { Activity, ScrollText } from 'lucide-react';
-import { useMemo } from 'react';
-import { Area, AreaChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { formatClock, formatPct, tsToDate, tsToMs } from '@/lib/format';
-import { useFeed, useRiskSeries } from '@/lib/ops/hooks';
-import { FEED_SEVERITY, riskLevel } from '@/lib/ops/status';
-import { EmptyState, SectionLabel, StatusChip } from '@/components/ui/primitives';
+import { ScrollText } from 'lucide-react';
+import { formatClock, tsToDate } from '@/lib/format';
+import { useFeed } from '@/lib/ops/hooks';
+import { FEED_SEVERITY } from '@/lib/ops/status';
+import { EmptyState, SectionLabel } from '@/components/ui/primitives';
 import { useSilkRoad } from './SilkRoadState';
 
 export const RISK_ALERT_THRESHOLD = 40;
 
-export function BottomStrip() {
-  return (
-    <div className="grid h-[200px] shrink-0 grid-cols-2 gap-3 border-t border-line bg-elevated p-3">
-      <RiskMonitor />
-      <EventLog />
-    </div>
-  );
-}
-
-function RiskMonitor() {
-  const series = useRiskSeries();
-  const data = useMemo(() => series.map((s) => ({ t: tsToMs(s.ts), risk: s.riskIndex, onTime: s.onTimePct })), [series]);
-  const latest = series.at(-1);
-  const level = riskLevel(latest?.riskIndex ?? 0);
-
-  return (
-    <section
-      className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-line bg-panel p-3"
-      aria-label="Live supply chain risk monitor"
-    >
-      <SectionLabel
-        icon={Activity}
-        right={
-          latest && (
-            <span className="flex items-center gap-2 text-[11px] text-muted">
-              Risk index <b className="text-fg tabular-nums">{latest.riskIndex.toFixed(1)}</b>
-              <StatusChip meta={level.meta} label={level.label} />
-            </span>
-          )
-        }
-      >
-        Live: supply chain risk monitor
-      </SectionLabel>
-      <div className="relative mt-2 min-h-0 flex-1">
-        {data.length < 2 ? (
-          <p className="grid h-full place-items-center text-xs text-muted">Collecting live samples…</p>
-        ) : (
-          <div className="absolute inset-0">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: -18 }}>
-                <defs>
-                  <linearGradient id="riskFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="var(--danger)" stopOpacity={0.35} />
-                    <stop offset="55%" stopColor="var(--accent)" stopOpacity={0.15} />
-                    <stop offset="100%" stopColor="var(--accent)" stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="riskStroke" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="var(--danger)" />
-                    <stop offset="50%" stopColor="var(--violet)" />
-                    <stop offset="100%" stopColor="var(--accent)" />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 3" vertical={false} />
-                <XAxis
-                  dataKey="t"
-                  type="number"
-                  domain={['dataMin', 'dataMax']}
-                  tickFormatter={(t: number) => formatClock(new Date(t))}
-                  tick={{ fontSize: 10, fill: 'var(--faint)' }}
-                  stroke="var(--line)"
-                  minTickGap={40}
-                />
-                <YAxis domain={[0, 100]} ticks={[0, 25, 50, 75, 100]} tick={{ fontSize: 10, fill: 'var(--faint)' }} stroke="var(--line)" />
-                <ReferenceLine
-                  y={RISK_ALERT_THRESHOLD}
-                  stroke="var(--danger)"
-                  strokeDasharray="4 4"
-                  label={{ value: 'Alert threshold', position: 'insideTopRight', fontSize: 10, fill: 'var(--danger)' }}
-                />
-                <Tooltip
-                  contentStyle={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: 8, fontSize: 12 }}
-                  labelFormatter={(t) => formatClock(new Date(Number(t)))}
-                  formatter={(v, name) => [
-                    name === 'risk' ? Number(v).toFixed(1) : formatPct(Number(v)),
-                    name === 'risk' ? 'Risk index' : 'On-time',
-                  ]}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="risk"
-                  stroke="url(#riskStroke)"
-                  strokeWidth={2.2}
-                  fill="url(#riskFill)"
-                  isAnimationActive={false}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-      </div>
-    </section>
-  );
-}
-
-function EventLog() {
+/** System event log: on the Current AI Agents tab. Clicking a disruption event focuses it. */
+export function EventLog() {
   const feed = useFeed();
   const { setFocusId } = useSilkRoad();
   const items = feed.slice(0, 40);

@@ -34,6 +34,7 @@ import {
 } from "spacetimedb";
 
 // Import all reducer arg schemas
+import AddBranchReducer from "./add_branch_reducer";
 import AcknowledgeIrDraftReducer from "./acknowledge_ir_draft_reducer";
 import AgentHeartbeatReducer from "./agent_heartbeat_reducer";
 import ApproveActionReducer from "./approve_action_reducer";
@@ -53,6 +54,8 @@ import ReportDisruptionReducer from "./report_disruption_reducer";
 import ResetOrgReducer from "./reset_org_reducer";
 import ResolveDisruptionReducer from "./resolve_disruption_reducer";
 import ResumeAgentRunReducer from "./resume_agent_run_reducer";
+import SeedBranchesReducer from "./seed_branches_reducer";
+import SendBranchMessageReducer from "./send_branch_message_reducer";
 import SetAgentIdentityReducer from "./set_agent_identity_reducer";
 import SetSimPausedReducer from "./set_sim_paused_reducer";
 import SimulateCongestionReducer from "./simulate_congestion_reducer";
@@ -69,6 +72,8 @@ import ActionProposalRow from "./action_proposal_table";
 import AgentRunRow from "./agent_run_table";
 import AgentServiceRow from "./agent_service_table";
 import AgentStepRow from "./agent_step_table";
+import BranchRow from "./branch_table";
+import BranchMessageRow from "./branch_message_table";
 import DisruptionRow from "./disruption_table";
 import FeedItemRow from "./feed_item_table";
 import NewsScanRow from "./news_scan_table";
@@ -143,6 +148,34 @@ const tablesSchema = __schema({
       { name: 'agent_step_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, AgentStepRow),
+  branch: __table({
+    name: 'branch',
+    indexes: [
+      { accessor: 'id', name: 'branch_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'orgId', name: 'branch_org_id_idx_btree', algorithm: 'btree', columns: [
+        'orgId',
+      ] },
+    ],
+    constraints: [
+      { name: 'branch_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, BranchRow),
+  branchMessage: __table({
+    name: 'branch_message',
+    indexes: [
+      { accessor: 'id', name: 'branch_message_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'orgId', name: 'branch_message_org_id_idx_btree', algorithm: 'btree', columns: [
+        'orgId',
+      ] },
+    ],
+    constraints: [
+      { name: 'branch_message_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, BranchMessageRow),
   disruption: __table({
     name: 'disruption',
     indexes: [
@@ -369,6 +402,7 @@ const tablesSchema = __schema({
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(
+  __reducerSchema("add_branch", AddBranchReducer),
   __reducerSchema("acknowledge_ir_draft", AcknowledgeIrDraftReducer),
   __reducerSchema("agent_heartbeat", AgentHeartbeatReducer),
   __reducerSchema("approve_action", ApproveActionReducer),
@@ -388,6 +422,8 @@ const reducersSchema = __reducers(
   __reducerSchema("reset_org", ResetOrgReducer),
   __reducerSchema("resolve_disruption", ResolveDisruptionReducer),
   __reducerSchema("resume_agent_run", ResumeAgentRunReducer),
+  __reducerSchema("seed_branches", SeedBranchesReducer),
+  __reducerSchema("send_branch_message", SendBranchMessageReducer),
   __reducerSchema("set_agent_identity", SetAgentIdentityReducer),
   __reducerSchema("set_sim_paused", SetSimPausedReducer),
   __reducerSchema("simulate_congestion", SimulateCongestionReducer),

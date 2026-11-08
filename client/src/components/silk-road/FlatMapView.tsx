@@ -1,22 +1,64 @@
 'use client';
 
-/** 2D Silk Road map (d3-geo + SVG) fitted to the workspace's network. */
-import { geoNaturalEarth1, geoPath } from 'd3-geo';
-import { useEffect, useMemo, useRef, useState } from 'react';
+/**
+ * 2D Silk Road map (d3-geo + SVG) fitted to the workspace's network. Explore it like the globe: scroll to zoom around
+ * the pointer, drag to pan, double-click to zoom in.
+ *
+ * The world wraps horizontally like a cylinder: Mercator is rectangular, so the map is drawn as side-by-side copies one
+ * world-width apart and panning never reaches an edge. The pan offset is folded back into a single world-width after
+ * every move, which keeps the numbers small and is invisible because the copies are identical. Hubs, pins, news markers
+ * and shipments are placed in screen space (repeated in every visible copy) so they keep their size at every zoom.
+ */
+import clsx from 'clsx';
+import { geoMercator, geoPath } from 'd3-geo';
+import { Minus, Plus, RotateCcw } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import type { Disruption, Node, Route } from '@/module_bindings/ops/types';
+import { cssColor, nodeKey, routeKey, SHIPMENT_KEY } from '@/lib/ops/legend';
 import { NODE_KIND, ROUTE_STATUS } from '@/lib/ops/status';
-import { COUNTRIES, displayedProgress, movementFactor, SamplerCache, visibleRoutes, type AnimatedShipment } from './map-data';
+import type { MarkerStyle } from '@/lib/settings';
+import { BORDERS, COUNTRIES, displayedProgress, movementFactor, SamplerCache, visibleRoutes, type AnimatedShipment } from './map-data';
 import type { GlobeViewProps } from './GlobeView';
+import { TrackedCard } from './TrackedCard';
 
-const STATUS_STROKE: Record<string, string> = {
-  healthy: 'var(--success)',
-  at_risk: 'var(--warning)',
-  disrupted: 'var(--danger)',
-  rerouted: 'var(--cyan)',
-};
+interface View {
+  k: number;
+  x: number;
+  y: number;
+}
+
+/** Where one copy of the world sits in projected pixels (at zoom 1, before panning). */
+interface World {
+  width: number;
+  left: number;
+  top: number;
+  bottom: number;
+}
+
+type XY = [number, number];
+
+const IDENTITY: View = { k: 1, x: 0, y: 0 };
+const MAX_ZOOM = 16;
+/** Pointer travel (px) before a press counts as a drag rather than a click. */
+const DRAG_SLOP = 4;
+/** Markers this far outside the viewport are still drawn, so they slide in rather than pop in. */
+const MARKER_MARGIN = 48;
+
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+
+/** Screen positions of a projected point in every world copy that is (nearly) on screen. */
+function copiesOf(xy: XY, view: View, world: World, width: number, margin = MARKER_MARGIN): XY[] {
+  if (world.width <= 0) return [[xy[0] * view.k + view.x, xy[1] * view.k + view.y]];
+  const first = Math.ceil(((-margin - view.x) / view.k - xy[0]) / world.width);
+  const last = Math.floor(((width + margin - view.x) / view.k - xy[0]) / world.width);
+  const out: XY[] = [];
+  for (let i = first; i <= last; i++) out.push([(xy[0] + i * world.width) * view.k + view.x, xy[1] * view.k + view.y]);
+  return out;
+}
 
 export default function FlatMapView(props: GlobeViewProps) {
-  const { network, disruptions, focused, selectedRouteId, labelSize, shipSize } = props;
+  const { network, disruptions, focused, selectedRouteId, labelSize, shipSize, colors, markerStyle } = props;
+  const shipmentFill = cssColor(SHIPMENT_KEY, colors);
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
 
@@ -36,11 +78,16 @@ export default function FlatMapView(props: GlobeViewProps) {
     return network.nodes.filter((n) => !n.standby || active.has(n.id));
   }, [network.nodes, routes]);
 
+  // Refit only when the hubs themselves change (live updates hand us new arrays every tick), so zoom and pan persist.
+  const hubSignature = network.nodes.map((n) => `${n.id}:${n.lat}:${n.lng}`).join('|');
   const projection = useMemo(() => {
-    const p = geoNaturalEarth1();
-    if (size.width === 0 || network.nodes.length === 0) return p;
+    const p = geoMercator();
+    if (size.width === 0 || !hubSignature) return p;
     const pad = Math.min(size.width, size.height) * 0.1;
-    const coordinates = network.nodes.map((n) => [n.lng, n.lat]);
+    const coordinates = hubSignature.split('|').map((h) => {
+      const [, lat, lng] = h.split(':').map(Number);
+      return [lng, lat];
+    });
     p.fitExtent(
       [
         [pad, pad],
@@ -49,13 +96,181 @@ export default function FlatMapView(props: GlobeViewProps) {
       { type: 'MultiPoint', coordinates }
     );
     return p;
-  }, [size, network.nodes]);
+  }, [size, hubSignature]);
 
   const path = useMemo(() => geoPath(projection), [projection]);
-  const countryPaths = useMemo(() => COUNTRIES.map((f) => path(f) ?? ''), [path]);
+  // Mercator's world is a square, 2π·scale on a side, centred on the projection's translate.
+  const world = useMemo<World>(() => {
+    const s = projection.scale();
+    const [tx, ty] = projection.translate();
+    return { width: 2 * Math.PI * s, left: tx - Math.PI * s, top: ty - Math.PI * s, bottom: ty + Math.PI * s };
+  }, [projection]);
+
+  // ── Pan & zoom ──
+  const [view, setView] = useState<View>(IDENTITY);
+  const viewRef = useRef(view);
+  useEffect(() => {
+    viewRef.current = view;
+  }, [view]);
+  /**
+   * Horizontally the world repeats, so any offset is valid: fold it into one world-width (invisible, because the copies
+   * are identical). Vertically keep the map covering the view so no space shows beyond the poles.
+   */
+  const clampView = useCallback(
+    (v: View): View => {
+      const { height: h } = size;
+      const worldHeight = world.bottom - world.top;
+      const minZoom = worldHeight > 0 ? Math.min(1, h / worldHeight) : 0.5;
+      const k = clamp(v.k, minZoom, MAX_ZOOM);
+      const period = world.width * k;
+      const x = period > 0 ? ((((v.x + period / 2) % period) + period) % period) - period / 2 : v.x;
+      const top = world.top * k;
+      const bottom = world.bottom * k;
+      const y = bottom - top <= h ? (h - top - bottom) / 2 : clamp(v.y, h - bottom, -top);
+      return { k, x, y };
+    },
+    [size, world]
+  );
+
+  // The fitted view of the whole network. A new fit (workspace switch or resize) starts from it again.
+  const home = useMemo(() => clampView(IDENTITY), [clampView]);
+  useEffect(() => setView(home), [home]);
+
+  /** Zoom by a factor around a point given in container pixels. */
+  const zoomAt = useCallback(
+    (factor: number, cx: number, cy: number) =>
+      setView((v) => {
+        const target = clampView({ ...v, k: v.k * factor });
+        const ratio = target.k / v.k;
+        return clampView({ k: target.k, x: cx - (cx - v.x) * ratio, y: cy - (cy - v.y) * ratio });
+      }),
+    [clampView]
+  );
+
+  // Wheel zoom needs a non-passive listener so the page never scrolls instead.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const rect = el.getBoundingClientRect();
+      const delta = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+      zoomAt(Math.exp(-delta * 0.0015), e.clientX - rect.left, e.clientY - rect.top);
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [zoomAt]);
+
+  const press = useRef<{ x: number; y: number; vx: number; vy: number; dragging: boolean } | null>(null);
+  const justDragged = useRef(false);
+  const [dragging, setDragging] = useState(false);
+
+  const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    press.current = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y, dragging: false };
+  };
+  const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const p = press.current;
+    if (!p) return;
+    const dx = e.clientX - p.x;
+    const dy = e.clientY - p.y;
+    if (!p.dragging) {
+      if (Math.hypot(dx, dy) < DRAG_SLOP) return;
+      p.dragging = true;
+      setDragging(true);
+      // Dragging takes the camera back from tracking; the card stays on the dot.
+      if (trackedRef.current !== null && followRef.current) {
+        followRef.current = false;
+        setFollowing(false);
+      }
+      e.currentTarget.setPointerCapture(e.pointerId);
+    }
+    setView((v) => clampView({ k: v.k, x: p.vx + dx, y: p.vy + dy }));
+  };
+  const endPress = () => {
+    if (press.current?.dragging) {
+      // Swallow the click the browser fires right after a drag, but never a later one.
+      justDragged.current = true;
+      setTimeout(() => (justDragged.current = false), 0);
+    }
+    press.current = null;
+    setDragging(false);
+  };
+
+  /** World copies (by index) that overlap the viewport. */
+  const copyIndices = useMemo(() => {
+    if (world.width <= 0 || size.width === 0) return [0];
+    const visibleLeft = -view.x / view.k;
+    const visibleRight = (size.width - view.x) / view.k;
+    const first = Math.floor((visibleLeft - world.left) / world.width);
+    const last = Math.floor((visibleRight - world.left) / world.width);
+    const out: number[] = [];
+    for (let i = first; i <= last; i++) out.push(i);
+    return out;
+  }, [world, view, size.width]);
+
+  /** Screen positions of a lng/lat in every visible copy. */
+  const screenCopies = useCallback(
+    (lng: number, lat: number): XY[] => {
+      const xy = projection([lng, lat]);
+      return xy ? copiesOf(xy as XY, view, world, size.width) : [];
+    },
+    [projection, view, world, size.width]
+  );
+
   const affected = useMemo(() => new Set(focused?.affectedRouteIds ?? []), [focused]);
 
-  // Animate shipment dots by writing directly to the SVG (no React re-render per frame).
+  // The land and lanes are built once per fit/style and reused in every copy.
+  const land = useMemo(
+    () => (
+      <>
+        {/* Fills get a hairline in the land colour so neighbouring copies meet without an anti-aliasing seam. */}
+        {COUNTRIES.map((f, i) => (
+          <path
+            key={i}
+            d={path(f) ?? ''}
+            fill="var(--globe-land)"
+            stroke="var(--globe-land)"
+            strokeWidth={0.8}
+            vectorEffect="non-scaling-stroke"
+          />
+        ))}
+        <path d={path(BORDERS) ?? ''} fill="none" stroke="var(--globe-border)" strokeWidth={0.6} vectorEffect="non-scaling-stroke" />
+      </>
+    ),
+    [path]
+  );
+
+  const { onSelectRoute } = props;
+  const lanes = useMemo(
+    () => (
+      <g fill="none" strokeLinecap="round">
+        {routes.map((route) => {
+          const emphasised = route.id === selectedRouteId || affected.has(route.id) || route.status === 'disrupted';
+          return (
+            <path
+              key={route.id}
+              d={path({ type: 'LineString', coordinates: route.waypoints.map((p) => [p.lng, p.lat]) }) ?? ''}
+              stroke={cssColor(routeKey(route.status), colors)}
+              strokeWidth={emphasised ? 2.6 : 1.3}
+              vectorEffect="non-scaling-stroke"
+              strokeDasharray={
+                route.status === 'rerouted' ? '6 4' : route.mode === 'air' ? '2 4' : route.status === 'disrupted' ? '5 3' : undefined
+              }
+              opacity={route.status === 'healthy' ? 0.75 : 1}
+              className="cursor-pointer"
+              onClick={() => onSelectRoute(route.id)}
+            >
+              <title>{`${route.label} · ${route.mode.toUpperCase()} · ${ROUTE_STATUS[route.status]?.label ?? route.status}`}</title>
+            </path>
+          );
+        })}
+      </g>
+    ),
+    [routes, path, selectedRouteId, affected, colors, onSelectRoute]
+  );
+
+  // ── Shipments: animated every frame by writing straight to the SVG, repeated in every visible copy ──
   const dotsRef = useRef<SVGGElement>(null);
   const shipmentsRef = useRef(new Map<number, AnimatedShipment>());
   const routesRef = useRef(network.routesById);
@@ -63,6 +278,35 @@ export default function FlatMapView(props: GlobeViewProps) {
     routesRef.current = network.routesById;
   }, [network.routesById]);
   const samplers = useMemo(() => new SamplerCache(), []);
+  const widthRef = useRef(size.width);
+  const heightRef = useRef(size.height);
+  useEffect(() => {
+    widthRef.current = size.width;
+    heightRef.current = size.height;
+  }, [size.width, size.height]);
+
+  // ── Tracking: the camera follows the clicked delivery and its card rides on the dot ──
+  const { trackedShipmentId, onTrackShipment } = props;
+  const trackedRef = useRef<number | null>(trackedShipmentId);
+  const followRef = useRef(true);
+  const zoomTargetRef = useRef<number | null>(null);
+  const [following, setFollowing] = useState(true);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const clampRef = useRef(clampView);
+  useEffect(() => {
+    clampRef.current = clampView;
+  }, [clampView]);
+  useEffect(() => {
+    trackedRef.current = trackedShipmentId;
+    followRef.current = true;
+    setFollowing(true);
+    // Move in a little closer when tracking starts; the user's own zoom is kept after that.
+    zoomTargetRef.current = trackedShipmentId === null ? null : Math.max(viewRef.current.k, 2.5);
+  }, [trackedShipmentId]);
+  const recenter = () => {
+    followRef.current = true;
+    setFollowing(true);
+  };
 
   useEffect(() => {
     const now = performance.now();
@@ -84,128 +328,251 @@ export default function FlatMapView(props: GlobeViewProps) {
 
   useEffect(() => {
     let frame = 0;
+    const radius = String(1.2 + shipSize * 0.7);
     const animate = () => {
       const group = dotsRef.current;
       if (group) {
         const now = performance.now();
-        const list = [...shipmentsRef.current.values()];
-        while (group.childNodes.length < list.length) {
-          group.appendChild(document.createElementNS('http://www.w3.org/2000/svg', 'circle'));
-        }
-        while (group.childNodes.length > list.length) group.lastChild?.remove();
-        list.forEach((s, i) => {
-          const circle = group.childNodes[i] as SVGCircleElement;
+        let v = viewRef.current;
+        const width = widthRef.current;
+        const height = heightRef.current;
+        let trackedXY: XY | null = null;
+        const positions: { id: number; xy: XY; fill: string }[] = [];
+        for (const s of shipmentsRef.current.values()) {
           const route = routesRef.current.get(s.routeId);
-          if (!route || route.status === 'standby') {
-            circle.setAttribute('r', '0');
-            return;
-          }
+          if (!route || route.status === 'standby') continue;
           const at = samplers.get(route).at(displayedProgress(s, movementFactor(s.status, route), now));
-          const xy = projection([at.lng, at.lat]);
-          if (!xy) return;
-          circle.setAttribute('cx', xy[0].toFixed(1));
-          circle.setAttribute('cy', xy[1].toFixed(1));
-          circle.setAttribute('r', String(1.2 + shipSize * 0.7));
-          circle.setAttribute(
-            'fill',
+          const xy = projection([at.lng, at.lat]) as XY | null;
+          if (!xy) continue;
+          if (s.id === trackedRef.current) trackedXY = xy;
+          const fill =
             s.status === 'delayed'
               ? 'var(--danger)'
               : s.status === 'held'
                 ? 'var(--warning)'
                 : s.status === 'rerouted'
                   ? 'var(--cyan)'
-                  : 'var(--text)'
-          );
+                  : shipmentFill;
+          positions.push({ id: s.id, xy, fill });
+        }
+
+        // Ease the camera toward the tracked dot (the nearest of its wrapped copies) until the user drags away.
+        if (trackedXY && followRef.current && width > 0) {
+          const zoomTarget = zoomTargetRef.current;
+          const k = zoomTarget ? v.k + (zoomTarget - v.k) * 0.12 : v.k;
+          if (zoomTarget && Math.abs(zoomTarget - k) < 0.01) zoomTargetRef.current = null;
+          const period = world.width * k;
+          let tx = width / 2 - trackedXY[0] * k;
+          if (period > 0) tx += Math.round((v.x - tx) / period) * period;
+          const ty = height / 2 - trackedXY[1] * k;
+          const next = clampRef.current({ k, x: v.x + (tx - v.x) * 0.12, y: v.y + (ty - v.y) * 0.12 });
+          if (Math.abs(next.x - v.x) > 0.05 || Math.abs(next.y - v.y) > 0.05 || next.k !== v.k) {
+            v = next;
+            viewRef.current = next;
+            setView(next);
+          }
+        }
+
+        const dots: { id: number; x: number; y: number; fill: string }[] = [];
+        for (const p of positions) {
+          for (const [x, y] of copiesOf(p.xy, v, world, width, 8)) dots.push({ id: p.id, x, y, fill: p.fill });
+        }
+        while (group.childNodes.length < dots.length) {
+          const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+          // A wide invisible stroke makes the small dots easy to click.
+          circle.setAttribute('stroke', 'transparent');
+          circle.setAttribute('stroke-width', '10');
+          circle.setAttribute('pointer-events', 'all');
+          circle.style.cursor = 'pointer';
+          group.appendChild(circle);
+        }
+        while (group.childNodes.length > dots.length) group.lastChild?.remove();
+        dots.forEach((d, i) => {
+          const circle = group.childNodes[i] as SVGCircleElement;
+          circle.setAttribute('cx', d.x.toFixed(1));
+          circle.setAttribute('cy', d.y.toFixed(1));
+          circle.setAttribute('r', radius);
+          circle.setAttribute('fill', d.fill);
+          circle.dataset.id = String(d.id);
         });
+
+        // Pin the info card to the copy of the tracked dot nearest the centre.
+        const card = cardRef.current;
+        if (card) {
+          const copies = trackedXY ? copiesOf(trackedXY, v, world, width, 0) : [];
+          const spot = copies.sort((a, b) => Math.abs(a[0] - width / 2) - Math.abs(b[0] - width / 2))[0];
+          if (spot && spot[1] >= 0 && spot[1] <= height) {
+            card.style.display = 'block';
+            card.style.transform = `translate(${spot[0].toFixed(1)}px, ${spot[1].toFixed(1)}px)`;
+          } else {
+            card.style.display = 'none';
+          }
+        }
       }
       frame = requestAnimationFrame(animate);
     };
     frame = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(frame);
-  }, [projection, shipSize, samplers]);
+  }, [projection, world, shipSize, samplers, shipmentFill]);
 
-  const lineFor = (route: Route) => path({ type: 'LineString', coordinates: route.waypoints.map((p) => [p.lng, p.lat]) }) ?? '';
-  const emphasised = (route: Route) => route.id === selectedRouteId || affected.has(route.id) || route.status === 'disrupted';
   const activeDisruptions = disruptions.filter((d) => d.status !== 'resolved');
+  const zoomCenter = (factor: number) => zoomAt(factor, size.width / 2, size.height / 2);
+  const moved = view.k !== home.k || view.x !== home.x || view.y !== home.y;
 
   return (
-    <div ref={containerRef} className="absolute inset-0 overflow-hidden" aria-label="2D map of supply-chain routes">
+    <div
+      ref={containerRef}
+      className={clsx('absolute inset-0 touch-none overflow-hidden select-none', dragging ? 'cursor-grabbing' : 'cursor-grab')}
+      aria-label="2D map of supply-chain routes. Scroll to zoom, drag to pan; the world wraps around."
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={endPress}
+      onPointerCancel={endPress}
+      onClickCapture={(e) => {
+        // A drag that ends over a lane or pin must not also select it.
+        if (justDragged.current) {
+          justDragged.current = false;
+          e.stopPropagation();
+        }
+      }}
+      onDoubleClick={(e) => {
+        const rect = e.currentTarget.getBoundingClientRect();
+        zoomAt(2, e.clientX - rect.left, e.clientY - rect.top);
+      }}
+    >
       {size.width > 0 && (
         <svg width={size.width} height={size.height} className="block">
           <rect width={size.width} height={size.height} fill="var(--globe-ocean)" opacity={0.55} />
-          <g>
-            {countryPaths.map((d, i) => (
-              <path key={i} d={d} fill="var(--globe-land)" stroke="var(--globe-border)" strokeWidth={0.6} />
-            ))}
-          </g>
-          <g fill="none" strokeLinecap="round">
-            {routes.map((route) => (
-              <path
-                key={route.id}
-                d={lineFor(route)}
-                stroke={STATUS_STROKE[route.status] ?? 'var(--success)'}
-                strokeWidth={emphasised(route) ? 2.6 : 1.3}
-                strokeDasharray={
-                  route.status === 'rerouted' ? '6 4' : route.mode === 'air' ? '2 4' : route.status === 'disrupted' ? '5 3' : undefined
-                }
-                opacity={route.status === 'healthy' ? 0.75 : 1}
-                className="cursor-pointer"
-                onClick={() => props.onSelectRoute(route.id)}
-              >
-                <title>{`${route.label} · ${route.mode.toUpperCase()} · ${ROUTE_STATUS[route.status]?.label ?? route.status}`}</title>
-              </path>
+          <g transform={`translate(${view.x},${view.y}) scale(${view.k})`}>
+            {copyIndices.map((i) => (
+              <g key={i} transform={`translate(${i * world.width},0)`}>
+                {land}
+                {lanes}
+              </g>
             ))}
           </g>
           <g>
-            {nodes.map((node) => (
-              <NodeDot key={node.id} node={node} projection={projection} labelSize={labelSize} />
-            ))}
+            {nodes.flatMap((node) =>
+              screenCopies(node.lng, node.lat).map((xy, i) => (
+                <NodeDot key={`${node.id}:${i}`} node={node} xy={xy} labelSize={labelSize} colors={colors} markerStyle={markerStyle} />
+              ))
+            )}
           </g>
-          <g ref={dotsRef} />
+          <g
+            ref={dotsRef}
+            onClick={(e) => {
+              const id = (e.target as SVGElement).dataset?.id;
+              if (id) onTrackShipment(Number(id));
+            }}
+          />
           <g>
-            {activeDisruptions.map((d) => (
-              <DisruptionPin key={String(d.id)} disruption={d} projection={projection} onClick={() => props.onFocusDisruption(d.id)} />
-            ))}
+            {activeDisruptions.flatMap((d) =>
+              screenCopies(d.lng, d.lat).map((xy, i) => (
+                <DisruptionPin key={`${d.id}:${i}`} disruption={d} xy={xy} onClick={() => props.onFocusDisruption(d.id)} />
+              ))
+            )}
             {props.signals
               .filter((s) => s.status === 'new')
-              .map((s) => {
-                const xy = projection([s.lng, s.lat]);
-                if (!xy) return null;
-                return (
-                  <g key={`n${s.id}`} transform={`translate(${xy[0]},${xy[1]})`} role="img" aria-label={`Live news signal: ${s.headline}`}>
+              .flatMap((s) =>
+                screenCopies(s.lng, s.lat).map((xy, i) => (
+                  <g
+                    key={`n${s.id}:${i}`}
+                    transform={`translate(${xy[0]},${xy[1]})`}
+                    role="img"
+                    aria-label={`Live news signal: ${s.headline}`}
+                  >
                     <rect x={-9} y={-9} width={18} height={18} rx={5} fill="var(--violet)" />
                     <text textAnchor="middle" y={4} fontSize={11} fontWeight={800} fill="#fff">
                       N
                     </text>
                     <title>{`Live news (Grok): ${s.headline}`}</title>
                   </g>
-                );
-              })}
+                ))
+              )}
           </g>
         </svg>
       )}
+
+      {trackedShipmentId !== null && (
+        <TrackedCard
+          ref={cardRef}
+          shipmentId={trackedShipmentId}
+          network={network}
+          following={following}
+          onRecenter={recenter}
+          onClose={() => onTrackShipment(null)}
+        />
+      )}
+
+      {/* Zoom controls (scroll and drag work too). */}
+      <div
+        className="absolute bottom-14 left-1/2 z-10 flex -translate-x-1/2 items-center overflow-hidden rounded-lg border border-line bg-panel/95 text-muted shadow-panel"
+        onPointerDown={(e) => e.stopPropagation()}
+        onDoubleClick={(e) => e.stopPropagation()}
+      >
+        <button
+          type="button"
+          onClick={() => zoomCenter(1 / 1.5)}
+          aria-label="Zoom out"
+          title="Zoom out"
+          className="grid size-8 place-items-center hover:bg-panel-hover hover:text-fg"
+        >
+          <Minus className="size-3.5" aria-hidden />
+        </button>
+        <span className="min-w-[44px] border-x border-line text-center text-[11px] font-semibold text-fg tabular-nums">
+          {Math.round(view.k * 100)}%
+        </span>
+        <button
+          type="button"
+          onClick={() => zoomCenter(1.5)}
+          aria-label="Zoom in"
+          title="Zoom in"
+          className="grid size-8 place-items-center hover:bg-panel-hover hover:text-fg"
+        >
+          <Plus className="size-3.5" aria-hidden />
+        </button>
+        <button
+          type="button"
+          onClick={() => setView(home)}
+          disabled={!moved}
+          aria-label="Reset view"
+          title="Back to the whole network"
+          className="grid size-8 place-items-center border-l border-line hover:bg-panel-hover hover:text-fg disabled:opacity-40 disabled:hover:bg-transparent"
+        >
+          <RotateCcw className="size-3.5" aria-hidden />
+        </button>
+      </div>
     </div>
   );
 }
 
-type Projector = (p: [number, number]) => [number, number] | null;
-
-function NodeDot({ node, projection, labelSize }: { node: Node; projection: Projector; labelSize: number }) {
-  const xy = projection([node.lng, node.lat]);
-  if (!xy) return null;
+function NodeDot(props: { node: Node; xy: XY; labelSize: number; colors: Record<string, string>; markerStyle: MarkerStyle }) {
+  const { node, xy, labelSize, colors, markerStyle } = props;
   const color =
-    node.status === 'offline'
-      ? 'var(--danger)'
-      : node.status === 'degraded'
-        ? 'var(--warning)'
-        : `var(--${NODE_KIND[node.kind]?.cssVar ?? 'accent'})`;
+    node.status === 'offline' ? 'var(--danger)' : node.status === 'degraded' ? 'var(--warning)' : cssColor(nodeKey(node.kind), colors);
+  const title = `${node.name} · ${NODE_KIND[node.kind]?.label ?? node.kind}`;
+  const Icon = NODE_KIND[node.kind]?.icon;
   return (
     <g transform={`translate(${xy[0]},${xy[1]})`}>
-      <circle r={4} fill={color} stroke="var(--panel)" strokeWidth={1.5}>
-        <title>{`${node.name} · ${NODE_KIND[node.kind]?.label ?? node.kind}`}</title>
-      </circle>
+      {markerStyle === 'icons' && Icon ? (
+        <g>
+          <circle r={9} fill="var(--panel)" stroke={color} strokeWidth={1.5} />
+          <Icon x={-5.5} y={-5.5} width={11} height={11} color={color} strokeWidth={2.4} aria-hidden />
+          <title>{title}</title>
+        </g>
+      ) : (
+        <circle r={4} fill={color} stroke="var(--panel)" strokeWidth={1.5}>
+          <title>{title}</title>
+        </circle>
+      )}
       {labelSize > 0 && (
-        <text x={7} y={3} fontSize={10 + labelSize * 4} fill="var(--muted)" className="pointer-events-none select-none">
+        <text
+          x={markerStyle === 'icons' ? 12 : 7}
+          y={3}
+          fontSize={10 + labelSize * 4}
+          fill="var(--muted)"
+          className="pointer-events-none select-none"
+        >
           {node.city.split(',')[0]}
         </text>
       )}
@@ -213,9 +580,7 @@ function NodeDot({ node, projection, labelSize }: { node: Node; projection: Proj
   );
 }
 
-function DisruptionPin({ disruption, projection, onClick }: { disruption: Disruption; projection: Projector; onClick(): void }) {
-  const xy = projection([disruption.lng, disruption.lat]);
-  if (!xy) return null;
+function DisruptionPin({ disruption, xy, onClick }: { disruption: Disruption; xy: XY; onClick(): void }) {
   const color = disruption.status === 'mitigating' ? 'var(--warning)' : 'var(--danger)';
   return (
     <g transform={`translate(${xy[0]},${xy[1]})`} className="cursor-pointer" onClick={onClick} role="button" aria-label={disruption.title}>

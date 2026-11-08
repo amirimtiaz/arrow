@@ -1,7 +1,21 @@
 'use client';
 
 import clsx from 'clsx';
-import { Check, ChevronDown, FlaskConical, Globe2, LineChart, Moon, Rss, ShieldCheck, Sun, UserRound, type LucideIcon } from 'lucide-react';
+import {
+  Antenna,
+  Bot,
+  Check,
+  ChevronDown,
+  FlaskConical,
+  Globe2,
+  LineChart,
+  Moon,
+  ShieldCheck,
+  Sun,
+  UserRound,
+  Wifi,
+  type LucideIcon,
+} from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useOps, useOpsRows, useMyProfile, useOrgSelection, useCurrentOrg } from '@/lib/ops/client';
@@ -11,13 +25,17 @@ import { errorMessage, useToast } from '@/components/ui/toast';
 import { Dropdown } from '@/components/ui/primitives';
 import { ArrowShotLink } from '@/components/transition/arrow-transition';
 import { ArrowMark } from './ArrowMark';
+import { SettingsMenu } from './SettingsMenu';
 import { TopBarActionsTarget, TopBarTitleTarget } from './TopBarSlots';
 
+/** Icon-only tabs; the name shows as a tooltip. The Control Tower stays last (Winstead track, demo step 5). */
 const NAV: { href: string; label: string; icon: LucideIcon }[] = [
   { href: '/app', label: 'Silk Road', icon: Globe2 },
-  { href: '/app/control-tower', label: 'Control Tower', icon: ShieldCheck },
+  { href: '/app/communications', label: 'Communications', icon: Wifi },
   { href: '/app/analytics', label: 'Analytics', icon: LineChart },
-  { href: '/app/feed', label: 'Feed', icon: Rss },
+  { href: '/app/agents', label: 'Current AI Agents', icon: Bot },
+  { href: '/app/feed', label: 'Live Feed', icon: Antenna },
+  { href: '/app/control-tower', label: 'Control Tower', icon: ShieldCheck },
 ];
 
 const ROLE_LABEL: Record<string, string> = {
@@ -52,14 +70,13 @@ export function TopBar() {
               aria-label={label}
               aria-current={active ? 'page' : undefined}
               className={clsx(
-                'flex h-8 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-[13px] font-semibold whitespace-nowrap transition-colors',
+                'grid size-8 shrink-0 place-items-center rounded-lg border transition-colors',
                 active
                   ? 'border-accent/40 bg-accent-soft text-accent'
                   : 'border-line bg-panel text-muted hover:bg-panel-hover hover:text-fg'
               )}
             >
               <Icon className="size-4" aria-hidden />
-              <span className={clsx(!active && 'hidden min-[1800px]:inline')}>{label}</span>
             </Link>
           );
         })}
@@ -77,7 +94,7 @@ export function TopBar() {
         Simulated
       </span>
       <OrgSwitcher />
-      <ConnectionChip />
+      <SettingsMenu />
       <ThemeToggle />
       <UserMenu />
     </header>
@@ -162,36 +179,13 @@ export function PlanBadge({ plan }: { plan: string }) {
   );
 }
 
-function ConnectionChip() {
-  const { status, error, retry } = useOps();
-  const state = {
-    connected: { label: 'System running', className: 'border-success/40 bg-success-soft text-success', dot: 'bg-success' },
-    connecting: { label: 'Connecting', className: 'border-line bg-panel text-muted', dot: 'bg-faint animate-soft-pulse' },
-    reconnecting: {
-      label: 'Reconnecting',
-      className: 'border-warning/40 bg-warning-soft text-warning',
-      dot: 'bg-warning animate-soft-pulse',
-    },
-    error: { label: 'Offline', className: 'border-danger/40 bg-danger-soft text-danger', dot: 'bg-danger' },
-  }[status];
-
-  return (
-    <button
-      type="button"
-      onClick={status === 'error' ? retry : undefined}
-      title={status === 'error' ? `${error ?? 'Disconnected'}. Click to retry.` : 'Live connection to SpacetimeDB'}
-      className={clsx(
-        'flex h-8 items-center gap-2 rounded-lg border px-2.5 text-[12px] font-bold',
-        state.className,
-        status !== 'error' && 'cursor-default'
-      )}
-    >
-      <span className={clsx('size-2 rounded-full', state.dot)} aria-hidden />
-      <span className="hidden whitespace-nowrap min-[1700px]:inline">{state.label}</span>
-      <span className="sr-only min-[1700px]:hidden">{state.label}</span>
-    </button>
-  );
-}
+/** Live-feed connection, shown as a dot on the avatar: faint green pulse when connected, red pulse when not. */
+const LIVE_STATE = {
+  connected: { label: 'Live feed connected', dot: 'live-dot-ok', text: 'text-success' },
+  connecting: { label: 'Connecting to the live feed…', dot: 'live-dot-wait', text: 'text-muted' },
+  reconnecting: { label: 'Live feed disconnected. Reconnecting…', dot: 'live-dot-down', text: 'text-danger' },
+  error: { label: 'Live feed disconnected', dot: 'live-dot-down', text: 'text-danger' },
+} as const;
 
 function ThemeToggle() {
   const [theme, setTheme] = useTheme();
@@ -212,7 +206,8 @@ function ThemeToggle() {
 
 function UserMenu() {
   const profile = useMyProfile();
-  const { identityHex, resetIdentity } = useOps();
+  const { identityHex, resetIdentity, status, error, retry } = useOps();
+  const live = LIVE_STATE[status];
   const initials = profile?.name
     .split(/\s+/)
     .map((p) => p[0])
@@ -228,10 +223,12 @@ function UserMenu() {
           type="button"
           onClick={toggle}
           aria-expanded={open}
-          aria-label="Account"
-          className="grid size-8 place-items-center rounded-full bg-gradient-to-br from-accent to-violet text-xs font-bold text-white"
+          aria-label={`Account. ${live.label}`}
+          title={live.label}
+          className="relative grid size-8 place-items-center rounded-full bg-gradient-to-br from-accent to-violet text-xs font-bold text-white"
         >
           {initials || <UserRound className="size-4" aria-hidden />}
+          <span className={clsx('live-dot', live.dot)} aria-hidden />
         </button>
       )}
     >
@@ -239,6 +236,21 @@ function UserMenu() {
         <div className="p-1.5">
           <p className="text-sm font-semibold text-fg">{profile?.name ?? 'Not joined yet'}</p>
           <p className="text-xs text-muted">{profile ? ROLE_LABEL[profile.role] : 'Join a workspace to take actions'}</p>
+          <div className="mt-2 flex items-center gap-2 rounded-lg border border-line bg-panel-2 px-2 py-1.5">
+            <span className={clsx('live-dot live-dot-inline', live.dot)} aria-hidden />
+            <span className={clsx('min-w-0 flex-1 truncate text-xs font-semibold', live.text)} title={error ?? live.label}>
+              {live.label}
+            </span>
+            {status === 'error' && (
+              <button
+                type="button"
+                onClick={retry}
+                className="rounded-md px-1.5 py-0.5 text-[11px] font-semibold text-accent hover:bg-panel-hover"
+              >
+                Retry
+              </button>
+            )}
+          </div>
           <p className="mt-2 truncate font-mono text-[10px] text-faint" title={identityHex ?? ''}>
             Identity {identityHex ? `${identityHex.slice(0, 10)}…${identityHex.slice(-6)}` : '—'}
           </p>

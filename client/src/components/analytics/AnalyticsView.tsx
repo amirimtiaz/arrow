@@ -12,6 +12,7 @@ import { useAnalytics, type AnalyticsState } from '@/lib/use-analytics';
 import { TopBarTitle } from '@/components/shell/TopBarSlots';
 import { EmptyState, Panel, SectionLabel, StatusChip } from '@/components/ui/primitives';
 import { RISK_ALERT_THRESHOLD } from '@/components/silk-road/BottomStrip';
+import { BranchReports } from './BranchReports';
 
 const RANGES = [
   { label: '6 h', hours: 6 },
@@ -92,6 +93,9 @@ export function AnalyticsView() {
             </div>
           </div>
         )}
+
+        {/* Reports sent between branches (Communications tab), live. */}
+        <BranchReports />
 
         <div className="grid grid-cols-4 gap-3">
           <SummaryCard

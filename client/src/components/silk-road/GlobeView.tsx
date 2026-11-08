@@ -8,12 +8,14 @@
  * (pulsing rings + clickable "!" markers) and shipments (a custom
  * THREE.Points layer animated every frame between 2-second server ticks).
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import Globe, { type GlobeMethods } from 'react-globe.gl';
 import * as THREE from 'three';
 import type { Disruption, NewsSignal, Node, Org, Route } from '@/module_bindings/ops/types';
 import type { Network } from '@/lib/ops/hooks';
+import { nodeKey, resolvedColor, routeKey, SHIPMENT_KEY } from '@/lib/ops/legend';
 import { NODE_KIND, ROUTE_STATUS } from '@/lib/ops/status';
+import type { MarkerStyle } from '@/lib/settings';
 import { readCssVars, useTheme } from '@/lib/theme';
 import {
   arcAltitudeFor,
@@ -25,6 +27,7 @@ import {
   visibleRoutes,
   type AnimatedShipment,
 } from './map-data';
+import { TrackedCard } from './TrackedCard';
 
 const COLOR_VARS = [
   'globe-ocean',
@@ -53,8 +56,15 @@ export interface GlobeViewProps {
   labelSize: number;
   shipSize: number;
   rotateSpeed: number;
+  /** Custom legend colours (Settings › Map › Legend colors); missing keys use the theme. */
+  colors: Record<string, string>;
+  /** Draw hubs as coloured dots or as small icons. */
+  markerStyle: MarkerStyle;
   onSelectRoute(id: number | null): void;
   onFocusDisruption(id: bigint): void;
+  /** Delivery the camera follows, with its info card on the dot. */
+  trackedShipmentId: number | null;
+  onTrackShipment(id: number | null): void;
 }
 
 interface PathDatum {
@@ -62,8 +72,17 @@ interface PathDatum {
   points: [number, number, number][];
 }
 
+/** A hub drawn as an HTML icon (icon marker style). New objects whenever colour or icon changes, so the globe redraws them. */
+interface NodeIconDatum {
+  node: Node;
+  color: string;
+  svg: string;
+}
+
+const isNodeIcon = (d: object): d is NodeIconDatum => 'svg' in d && 'node' in d;
+
 export default function GlobeView(props: GlobeViewProps) {
-  const { org, network, disruptions, focused, selectedRouteId, labelSize, shipSize, rotateSpeed } = props;
+  const { org, network, disruptions, focused, selectedRouteId, labelSize, shipSize, rotateSpeed, colors, markerStyle } = props;
   const globeRef = useRef<GlobeMethods | undefined>(undefined);
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
@@ -106,8 +125,8 @@ export default function GlobeView(props: GlobeViewProps) {
   const arcs = useMemo(() => routes.filter((r) => r.mode === 'air'), [routes]);
 
   const routeColor = useCallback(
-    (route: Route) => (palette ? (palette[ROUTE_STATUS[route.status]?.cssVar as keyof Palette] ?? palette.success) : '#22c55e'),
-    [palette]
+    (route: Route) => (palette ? resolvedColor(routeKey(route.status), colors, palette) : '#22c55e'),
+    [palette, colors]
   );
   const isEmphasised = useCallback(
     (route: Route) => route.id === selectedRouteId || affected.has(route.id) || route.status === 'disrupted',
@@ -124,17 +143,35 @@ export default function GlobeView(props: GlobeViewProps) {
       if (!palette) return '#3b8bff';
       if (node.status === 'offline') return palette.danger;
       if (node.status === 'degraded') return palette.warning;
-      return palette[(NODE_KIND[node.kind]?.cssVar ?? 'accent') as keyof Palette] ?? palette.accent;
+      return resolvedColor(nodeKey(node.kind), colors, palette);
     },
-    [palette]
+    [palette, colors]
+  );
+
+  // Icon markup for each hub kind, captured once from the hidden lucide icons rendered below.
+  const iconSourceRef = useRef<HTMLDivElement>(null);
+  const [iconMarkup, setIconMarkup] = useState<Record<string, string>>({});
+  useLayoutEffect(() => {
+    const source = iconSourceRef.current;
+    if (!source) return;
+    const markup: Record<string, string> = {};
+    source.querySelectorAll<HTMLElement>('[data-kind]').forEach((el) => (markup[el.dataset.kind!] = el.innerHTML));
+    setIconMarkup(markup);
+  }, []);
+
+  const nodeIcons = useMemo<NodeIconDatum[]>(
+    () => (markerStyle === 'icons' ? visibleNodes.map((node) => ({ node, color: nodeColor(node), svg: iconMarkup[node.kind] ?? '' })) : []),
+    [markerStyle, visibleNodes, nodeColor, iconMarkup]
   );
 
   const activeDisruptions = useMemo(() => disruptions.filter((d) => d.status !== 'resolved'), [disruptions]);
   // "!" for declared disruptions, "N" for undecided Grok news signals.
+  // Hub icons go first so alert markers draw on top of them.
   const markers = useMemo(
-    () => [...activeDisruptions, ...props.signals.filter((s) => s.status === 'new')],
-    [activeDisruptions, props.signals]
+    () => [...nodeIcons, ...activeDisruptions, ...props.signals.filter((s) => s.status === 'new')],
+    [nodeIcons, activeDisruptions, props.signals]
   );
+  const shipmentColor = palette ? resolvedColor(SHIPMENT_KEY, colors, palette) : '#e7edf6';
 
   // Fly to the workspace when it changes, then to the focused disruption.
   useEffect(() => {
@@ -152,8 +189,45 @@ export default function GlobeView(props: GlobeViewProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, focusedId]);
 
-  // Auto-rotate pauses while an active disruption is focused, so the camera stays on it.
-  const holdCamera = !!focused && focused.status !== 'resolved';
+  // ── Tracking: the camera follows the clicked delivery and its card rides on the dot ──
+  const { trackedShipmentId, onTrackShipment } = props;
+  const trackedRef = useRef<number | null>(trackedShipmentId);
+  const followRef = useRef(true);
+  const altitudeTargetRef = useRef<number | null>(null);
+  const [following, setFollowing] = useState(true);
+  const cardRef = useRef<HTMLDivElement>(null);
+  /** Where each delivery was drawn this frame (for clicking and tracking). */
+  const livePosRef = useRef(new Map<number, { lat: number; lng: number; alt: number }>());
+  useEffect(() => {
+    trackedRef.current = trackedShipmentId;
+    followRef.current = true;
+    setFollowing(true);
+    // Move in a little closer when tracking starts; the user's own zoom is kept after that.
+    const altitude = globeRef.current?.pointOfView().altitude ?? 2;
+    altitudeTargetRef.current = trackedShipmentId === null ? null : Math.min(altitude, 1.1);
+  }, [trackedShipmentId]);
+  const press = useRef<{ x: number; y: number; moved: boolean } | null>(null);
+
+  /** Click picking: the nearest visible delivery dot within a few pixels of the pointer. */
+  const pickShipment = (clientX: number, clientY: number): number | null => {
+    const globe = globeRef.current;
+    const el = containerRef.current;
+    if (!globe || !el) return null;
+    const rect = el.getBoundingClientRect();
+    const camera = globe.camera().position;
+    let best: { id: number; d: number } | null = null;
+    for (const [id, p] of livePosRef.current) {
+      const c = globe.getCoords(p.lat, p.lng, p.alt);
+      if (c.x * camera.x + c.y * camera.y + c.z * camera.z <= 0) continue; // far side of the globe
+      const s = globe.getScreenCoords(p.lat, p.lng, p.alt);
+      const d = Math.hypot(s.x - (clientX - rect.left), s.y - (clientY - rect.top));
+      if (d < 12 && (!best || d < best.d)) best = { id, d };
+    }
+    return best?.id ?? null;
+  };
+
+  // Auto-rotate pauses while an active disruption is focused or a delivery is tracked, so the camera stays on it.
+  const holdCamera = (!!focused && focused.status !== 'resolved') || trackedShipmentId !== null;
   useEffect(() => {
     const controls = globeRef.current?.controls();
     if (!controls) return;
@@ -209,7 +283,7 @@ export default function GlobeView(props: GlobeViewProps) {
       delayed: new THREE.Color(palette.danger),
       held: new THREE.Color(palette.warning),
       rerouted: new THREE.Color(palette.cyan),
-      in_transit: new THREE.Color(palette.text),
+      in_transit: new THREE.Color(shipmentColor),
     };
     let capacity = 0;
     let positions = new Float32Array(0);
@@ -226,6 +300,8 @@ export default function GlobeView(props: GlobeViewProps) {
         geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
       }
       const now = performance.now();
+      const live = livePosRef.current;
+      live.clear();
       list.forEach((s, i) => {
         const route = routesRef.current.get(s.routeId);
         if (!route || route.status === 'standby') {
@@ -235,6 +311,7 @@ export default function GlobeView(props: GlobeViewProps) {
         const t = displayedProgress(s, movementFactor(s.status, route), now);
         const at = samplers.get(route).at(t);
         const altitude = route.mode === 'air' ? arcAltitudeFor(route) * Math.sin(Math.PI * t) + 0.01 : 0.012;
+        live.set(s.id, { lat: at.lat, lng: at.lng, alt: altitude });
         const c = globe.getCoords(at.lat, at.lng, altitude);
         positions[i * 3] = c.x;
         positions[i * 3 + 1] = c.y;
@@ -249,6 +326,31 @@ export default function GlobeView(props: GlobeViewProps) {
         geometry.attributes.color.needsUpdate = true;
         geometry.computeBoundingSphere();
       }
+
+      // Tracking: ease the camera toward the dot, then pin the card to it.
+      const tracked = trackedRef.current !== null ? live.get(trackedRef.current) : undefined;
+      if (tracked && followRef.current) {
+        const pov = globe.pointOfView();
+        const dLng = ((((tracked.lng - pov.lng) % 360) + 540) % 360) - 180;
+        const altTarget = altitudeTargetRef.current;
+        const altitude = altTarget ? pov.altitude + (altTarget - pov.altitude) * 0.08 : pov.altitude;
+        if (altTarget && Math.abs(altTarget - altitude) < 0.005) altitudeTargetRef.current = null;
+        globe.pointOfView({ lat: pov.lat + (tracked.lat - pov.lat) * 0.08, lng: pov.lng + dLng * 0.08, altitude }, 0);
+      }
+      const card = cardRef.current;
+      if (card) {
+        let shown = false;
+        if (tracked) {
+          const c = globe.getCoords(tracked.lat, tracked.lng, tracked.alt);
+          const cam = globe.camera().position;
+          if (c.x * cam.x + c.y * cam.y + c.z * cam.z > 0) {
+            const s = globe.getScreenCoords(tracked.lat, tracked.lng, tracked.alt);
+            card.style.transform = `translate(${s.x.toFixed(1)}px, ${s.y.toFixed(1)}px)`;
+            shown = true;
+          }
+        }
+        card.style.display = shown ? 'block' : 'none';
+      }
       frame = requestAnimationFrame(animate);
     };
     frame = requestAnimationFrame(animate);
@@ -259,7 +361,7 @@ export default function GlobeView(props: GlobeViewProps) {
       geometry.dispose();
       material.dispose();
     };
-  }, [ready, palette, shipSize, samplers]);
+  }, [ready, palette, shipSize, samplers, shipmentColor]);
 
   // ── Disruption markers ("!") ──
   const onFocusRef = useRef(props.onFocusDisruption);
@@ -268,6 +370,15 @@ export default function GlobeView(props: GlobeViewProps) {
     onFocusRef.current = onFocusDisruption;
   }, [onFocusDisruption]);
   const markerElement = useCallback((d: object) => {
+    if (isNodeIcon(d)) {
+      const el = document.createElement('span');
+      el.className = 'node-icon';
+      el.style.color = d.color;
+      // Static lucide SVG captured from our own render above (no user content).
+      el.innerHTML = d.svg;
+      el.title = `${d.node.name} · ${NODE_KIND[d.node.kind]?.label ?? d.node.kind}`;
+      return el;
+    }
     if ('headline' in d) {
       const signal = d as NewsSignal;
       const el = document.createElement('span');
@@ -321,7 +432,38 @@ export default function GlobeView(props: GlobeViewProps) {
   const arcStrokeFor = (route: Route) => (isEmphasised(route) ? 0.7 : 0.35) * Math.min(1, Math.max(cameraAltitude / 2.4, 0.08));
 
   return (
-    <div ref={containerRef} className="absolute inset-0" aria-label="3D globe of supply-chain routes">
+    <div
+      ref={containerRef}
+      className="absolute inset-0"
+      aria-label="3D globe of supply-chain routes. Click a moving delivery to track it."
+      onPointerDown={(e) => {
+        press.current = { x: e.clientX, y: e.clientY, moved: false };
+      }}
+      onPointerMove={(e) => {
+        const p = press.current;
+        if (!p || p.moved || e.buttons === 0 || Math.hypot(e.clientX - p.x, e.clientY - p.y) < 5) return;
+        p.moved = true;
+        // Rotating the globe takes the camera back from tracking; the card stays on the dot.
+        if (trackedRef.current !== null && followRef.current) {
+          followRef.current = false;
+          setFollowing(false);
+        }
+      }}
+      onClick={(e) => {
+        const p = press.current;
+        press.current = null;
+        if (p?.moved) return;
+        const id = pickShipment(e.clientX, e.clientY);
+        if (id !== null) onTrackShipment(id);
+      }}
+    >
+      <div ref={iconSourceRef} hidden>
+        {Object.entries(NODE_KIND).map(([kind, meta]) => (
+          <span key={kind} data-kind={kind}>
+            <meta.icon strokeWidth={2.4} />
+          </span>
+        ))}
+      </div>
       {size.width > 0 && palette && (
         <Globe
           ref={globeRef}
@@ -370,7 +512,7 @@ export default function GlobeView(props: GlobeViewProps) {
           arcLabel={routeTooltip}
           onArcClick={(d: object) => props.onSelectRoute((d as Route).id)}
           // Nodes
-          pointsData={visibleNodes}
+          pointsData={markerStyle === 'icons' ? [] : visibleNodes}
           pointLat={(d: object) => (d as Node).lat}
           pointLng={(d: object) => (d as Node).lng}
           pointColor={(d: object) => nodeColor(d as Node)}
@@ -401,11 +543,24 @@ export default function GlobeView(props: GlobeViewProps) {
           ringPropagationSpeed={(d: object) => Math.max(((d as Disruption).radiusKm / 111) * 1.6, 1.4 * scale)}
           ringRepeatPeriod={1100}
           htmlElementsData={markers}
-          htmlLat={(d: object) => (d as Disruption | NewsSignal).lat}
-          htmlLng={(d: object) => (d as Disruption | NewsSignal).lng}
-          htmlAltitude={0.02}
+          htmlLat={(d: object) => (isNodeIcon(d) ? d.node.lat : (d as Disruption | NewsSignal).lat)}
+          htmlLng={(d: object) => (isNodeIcon(d) ? d.node.lng : (d as Disruption | NewsSignal).lng)}
+          htmlAltitude={(d: object) => (isNodeIcon(d) ? 0.012 : 0.02)}
           htmlElement={markerElement}
           htmlTransitionDuration={0}
+        />
+      )}
+      {trackedShipmentId !== null && (
+        <TrackedCard
+          ref={cardRef}
+          shipmentId={trackedShipmentId}
+          network={network}
+          following={following}
+          onRecenter={() => {
+            followRef.current = true;
+            setFollowing(true);
+          }}
+          onClose={() => onTrackShipment(null)}
         />
       )}
     </div>

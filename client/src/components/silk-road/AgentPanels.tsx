@@ -6,28 +6,11 @@ import { useMemo } from 'react';
 import type { AgentRun, Disruption } from '@/module_bindings/ops/types';
 import { formatPct, formatUsd, safeJson, timeAgo, tsToDate } from '@/lib/format';
 import { AGENTS, prettyModel, useAgentService } from '@/lib/ops/agent';
-import { useKpis, useRunForDisruption, useRunSteps } from '@/lib/ops/hooks';
+import { useKpis, useRunSteps } from '@/lib/ops/hooks';
 import { DISRUPTION_KIND, riskLevel, SEVERITY } from '@/lib/ops/status';
 import { ProgressBar, SectionLabel, StatusChip } from '@/components/ui/primitives';
-import { AgentTrace } from './AgentTrace';
-import { useFocusedDisruption } from './SilkRoadState';
-
-export function RightPanel() {
-  const disruption = useFocusedDisruption();
-  const run = useRunForDisruption(disruption?.id);
-  return (
-    <aside
-      className="flex w-[384px] shrink-0 flex-col gap-3 overflow-hidden border-l border-line bg-elevated p-4"
-      aria-label="Risk and agent panel"
-    >
-      <RiskAssessment disruption={disruption} />
-      <AgentRoster run={run} disruption={disruption} />
-      <AgentTrace run={run} disruption={disruption} />
-    </aside>
-  );
-}
-
-function RiskAssessment({ disruption }: { disruption: Disruption | undefined }) {
+/** Risk assessment and the Nemotron agent roster, shown on the Current AI Agents tab. */
+export function RiskAssessment({ disruption }: { disruption: Disruption | undefined }) {
   const k = useKpis();
   const level = riskLevel(k.riskIndex);
   const active = disruption && disruption.status !== 'resolved';
@@ -104,7 +87,7 @@ function Gauge({ label, value, display, tone }: { label: string; value: number; 
   );
 }
 
-function AgentRoster({ run, disruption }: { run: AgentRun | undefined; disruption: Disruption | undefined }) {
+export function AgentRoster({ run, disruption }: { run: AgentRun | undefined; disruption: Disruption | undefined }) {
   const service = useAgentService();
   const steps = useRunSteps(run?.id);
 

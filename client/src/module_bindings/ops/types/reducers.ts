@@ -6,6 +6,7 @@
 import { type Infer as __Infer } from "spacetimedb";
 
 // Import all reducer arg schemas
+import AddBranchReducer from "../add_branch_reducer";
 import AcknowledgeIrDraftReducer from "../acknowledge_ir_draft_reducer";
 import AgentHeartbeatReducer from "../agent_heartbeat_reducer";
 import ApproveActionReducer from "../approve_action_reducer";
@@ -25,6 +26,8 @@ import ReportDisruptionReducer from "../report_disruption_reducer";
 import ResetOrgReducer from "../reset_org_reducer";
 import ResolveDisruptionReducer from "../resolve_disruption_reducer";
 import ResumeAgentRunReducer from "../resume_agent_run_reducer";
+import SeedBranchesReducer from "../seed_branches_reducer";
+import SendBranchMessageReducer from "../send_branch_message_reducer";
 import SetAgentIdentityReducer from "../set_agent_identity_reducer";
 import SetSimPausedReducer from "../set_sim_paused_reducer";
 import SimulateCongestionReducer from "../simulate_congestion_reducer";
@@ -34,6 +37,7 @@ import SwitchOrgReducer from "../switch_org_reducer";
 import TriggerRandomScenarioReducer from "../trigger_random_scenario_reducer";
 import TriggerScenarioReducer from "../trigger_scenario_reducer";
 
+export type AddBranchParams = __Infer<typeof AddBranchReducer>;
 export type AcknowledgeIrDraftParams = __Infer<typeof AcknowledgeIrDraftReducer>;
 export type AgentHeartbeatParams = __Infer<typeof AgentHeartbeatReducer>;
 export type ApproveActionParams = __Infer<typeof ApproveActionReducer>;
@@ -53,6 +57,8 @@ export type ReportDisruptionParams = __Infer<typeof ReportDisruptionReducer>;
 export type ResetOrgParams = __Infer<typeof ResetOrgReducer>;
 export type ResolveDisruptionParams = __Infer<typeof ResolveDisruptionReducer>;
 export type ResumeAgentRunParams = __Infer<typeof ResumeAgentRunReducer>;
+export type SeedBranchesParams = __Infer<typeof SeedBranchesReducer>;
+export type SendBranchMessageParams = __Infer<typeof SendBranchMessageReducer>;
 export type SetAgentIdentityParams = __Infer<typeof SetAgentIdentityReducer>;
 export type SetSimPausedParams = __Infer<typeof SetSimPausedReducer>;
 export type SimulateCongestionParams = __Infer<typeof SimulateCongestionReducer>;

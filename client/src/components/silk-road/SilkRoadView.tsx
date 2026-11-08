@@ -1,21 +1,23 @@
 'use client';
 
 import clsx from 'clsx';
-import { Box, Keyboard, Loader2, Map as MapIcon, RefreshCw, Shuffle, Sparkles, WifiOff } from 'lucide-react';
+import { ArrowRight, Bot, Box, Keyboard, Loader2, Map as MapIcon, RefreshCw, Sparkles, TriangleAlert, WifiOff } from 'lucide-react';
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { useCurrentOrg, useOps } from '@/lib/ops/client';
-import { useDisruptions, useNetwork, useNewsSignals, useOptions, useRunForDisruption } from '@/lib/ops/hooks';
-import { MODE, ROUTE_STATUS } from '@/lib/ops/status';
+import { useDisruptions, useNetwork, useNewsSignals, useRunForDisruption } from '@/lib/ops/hooks';
+import { DISRUPTION_KIND, MODE, ROUTE_STATUS, SEVERITY } from '@/lib/ops/status';
+import { useSettings } from '@/lib/settings';
 import { TopBarActions, TopBarTitle } from '@/components/shell/TopBarSlots';
-import { Button, Dialog } from '@/components/ui/primitives';
+import { Button, Dialog, StatusChip } from '@/components/ui/primitives';
 import { AskArrow } from './AskArrow';
-import { BottomStrip } from './BottomStrip';
+import { DeliverySearch } from './DeliverySearch';
 import { KpiStrip } from './KpiStrip';
-import { MapControls } from './MapControls';
-import { RightPanel } from './RightPanel';
+import { MapLegend } from './MapLegend';
 import { NewsSignals } from './NewsSignals';
+import { RiskCard } from './RiskCard';
 import { ScenarioPanel } from './ScenarioPanel';
 import { SilkRoadStateProvider, useFocusedDisruption, useSilkRoad } from './SilkRoadState';
 
@@ -54,6 +56,7 @@ function SilkRoadLayout() {
   const focused = useFocusedDisruption();
   const { status, ready, error, retry, resetIdentity } = useOps();
   const ui = useSilkRoad();
+  const { settings } = useSettings();
   const [showShortcuts, setShowShortcuts] = useState(false);
 
   useKeyboardShortcuts(setShowShortcuts);
@@ -65,14 +68,21 @@ function SilkRoadLayout() {
     signals,
     focused,
     selectedRouteId: ui.selectedRouteId,
-    labelSize: ui.labelSize,
-    shipSize: ui.shipSize,
-    rotateSpeed: ui.rotateSpeed,
+    labelSize: settings.map.labelSize,
+    shipSize: settings.map.vehicleSize,
+    rotateSpeed: settings.map.autoRotate,
+    colors: settings.map.colors,
+    markerStyle: settings.map.markerStyle,
     onSelectRoute: ui.setSelectedRouteId,
-    onFocusDisruption: (id: bigint) => {
-      ui.setFocusId(id);
-      ui.setTraceTab('reasoning');
+    trackedShipmentId: ui.trackedShipmentId,
+    onTrackShipment: (id: number | null) => {
+      ui.setTrackedShipmentId(id);
+      if (id !== null) {
+        const routeId = network.shipments.find((s) => s.id === id)?.routeId;
+        if (routeId !== undefined) ui.setSelectedRouteId(routeId);
+      }
     },
+    onFocusDisruption: (id: bigint) => ui.setFocusId(id),
   };
 
   return (
@@ -106,16 +116,20 @@ function SilkRoadLayout() {
             (!ready || !org) && <MapLoading />
           )}
 
-          <div className="pointer-events-none absolute inset-0 z-10 flex items-start justify-between gap-4 p-4">
-            <MapControls network={network} />
-            <div className="hidden xl:block">
-              <KpiStrip />
-            </div>
-            <div className="flex flex-col items-end gap-2">
-              <ScenarioPanel />
-              <NewsSignals />
+          <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-4">
+            <div className="flex min-w-0 flex-col items-center gap-2">
+              <div className="hidden xl:block">
+                <KpiStrip />
+              </div>
+              <FocusCard />
             </div>
           </div>
+
+          {/* Draggable cards; each starts in its own corner and remembers where it was moved. */}
+          <MapLegend network={network} />
+          <ScenarioPanel />
+          {settings.map.showNews && <NewsSignals />}
+          {settings.map.showRisk && <RiskCard />}
 
           <button
             type="button"
@@ -126,10 +140,9 @@ function SilkRoadLayout() {
             Press <kbd className="rounded border border-line px-1 font-mono">?</kbd> for shortcuts
           </button>
         </div>
-        <BottomStrip />
       </div>
-      <div className="relative flex">
-        <RightPanel />
+      {/* Ask Arrow slides over the right edge of the map. */}
+      <div className="relative">
         <AskArrow />
       </div>
 
@@ -138,8 +151,7 @@ function SilkRoadLayout() {
           {[
             ['A', 'Open Ask Arrow'],
             ['2 / 3', 'Switch between 2D map and 3D globe'],
-            ['C', 'Toggle map controls'],
-            ['S', 'Toggle crisis scenarios'],
+            ['S', 'Show or hide the scenario window'],
             ['Esc', 'Close panels and dialogs'],
             ['?', 'Show this help'],
           ].map(([key, label]) => (
@@ -156,6 +168,8 @@ function SilkRoadLayout() {
 
 function useKeyboardShortcuts(setShowShortcuts: (v: boolean) => void) {
   const ui = useSilkRoad();
+  const { settings, updateScenarios } = useSettings();
+  const showScenarioWindow = settings.scenarios.showWindow;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
@@ -175,22 +189,19 @@ function useKeyboardShortcuts(setShowShortcuts: (v: boolean) => void) {
         case '3':
           ui.setViewMode('3d');
           break;
-        case 'c':
-        case 'C':
-          ui.setControlsOpen(!ui.controlsOpen);
-          break;
         case 's':
         case 'S':
-          ui.setScenariosOpen(!ui.scenariosOpen);
+          updateScenarios({ showWindow: !showScenarioWindow });
           break;
         case 'Escape':
           ui.setAskOpen(false);
+          ui.setTrackedShipmentId(null);
           break;
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [ui, setShowShortcuts]);
+  }, [ui, setShowShortcuts, updateScenarios, showScenarioWindow]);
 }
 
 /** Title + actions rendered into the shared top bar. */
@@ -198,8 +209,6 @@ function SilkRoadTopBar() {
   const org = useCurrentOrg();
   const network = useNetwork();
   const focused = useFocusedDisruption();
-  const run = useRunForDisruption(focused?.id);
-  const options = useOptions(focused?.id);
   const ui = useSilkRoad();
   const [startedAt] = useState(() => Date.now());
   const [now, setNow] = useState(() => Date.now());
@@ -221,9 +230,6 @@ function SilkRoadTopBar() {
     return 'Connecting…';
   }, [selected, focused, org, now, startedAt]);
 
-  const agentActive = run?.status === 'running';
-  const awaiting = run?.status === 'awaiting_approval';
-
   return (
     <>
       <TopBarTitle>
@@ -235,29 +241,7 @@ function SilkRoadTopBar() {
         </div>
       </TopBarTitle>
       <TopBarActions>
-        <span
-          className={clsx(
-            'flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[12px] font-semibold whitespace-nowrap',
-            agentActive
-              ? 'border-accent/40 bg-accent-soft text-accent'
-              : awaiting
-                ? 'border-warning/40 bg-warning-soft text-warning'
-                : 'border-line bg-panel text-muted'
-          )}
-        >
-          <Shuffle className={clsx('size-3.5', agentActive && 'animate-soft-pulse')} aria-hidden />
-          {agentActive ? 'Agent active' : awaiting ? 'Awaiting approval' : 'Agent idle'}
-        </span>
-        <button
-          type="button"
-          disabled={options.length === 0}
-          onClick={() => ui.setTraceTab(awaiting ? 'decision' : 'options')}
-          title={options.length === 0 ? 'No scored reroute options for the focused disruption yet' : 'Review reroute options'}
-          className="flex h-8 items-center gap-1.5 rounded-lg border border-line bg-panel px-2.5 text-[12px] font-semibold whitespace-nowrap text-fg hover:bg-panel-hover disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <RefreshCw className="size-3.5" aria-hidden />
-          Change Route
-        </button>
+        <DeliverySearch />
         <button
           type="button"
           onClick={() => ui.setAskOpen(!ui.askOpen)}
@@ -294,5 +278,51 @@ function SilkRoadTopBar() {
         </div>
       </TopBarActions>
     </>
+  );
+}
+
+/**
+ * Compact card for the disruption in focus (clicked "!" or the newest active one). The full agent trace and the
+ * Approve/Reject decision live on the Current AI Agents tab; this links straight to it.
+ */
+function FocusCard() {
+  const focused = useFocusedDisruption();
+  const run = useRunForDisruption(focused?.id);
+  if (!focused || focused.status === 'resolved') return null;
+
+  const KindIcon = DISRUPTION_KIND[focused.kind]?.icon ?? TriangleAlert;
+  const severity = SEVERITY[focused.severity] ?? SEVERITY.moderate;
+  const agent =
+    run?.status === 'running'
+      ? { label: 'Agents working…', className: 'text-accent' }
+      : run?.status === 'awaiting_approval'
+        ? { label: 'Awaiting your approval', className: 'text-warning' }
+        : run?.status === 'failed'
+          ? { label: 'Agent run failed', className: 'text-danger' }
+          : run
+            ? { label: 'Agent response complete', className: 'text-success' }
+            : { label: 'Agents starting…', className: 'text-muted' };
+
+  return (
+    <div className="pointer-events-auto flex max-w-[520px] items-center gap-3 rounded-xl border border-danger/40 bg-panel/95 py-2 pr-2 pl-3 shadow-panel backdrop-blur">
+      <KindIcon className="size-4 shrink-0 text-danger" aria-hidden />
+      <div className="min-w-0 flex-1">
+        <p className="flex items-center gap-2 text-[13px] font-bold text-fg">
+          <span className="truncate">{focused.title}</span>
+          <StatusChip meta={severity} />
+        </p>
+        <p className={clsx('flex items-center gap-1 text-[11.5px] font-semibold', agent.className)}>
+          <Bot className="size-3.5" aria-hidden />
+          {agent.label}
+        </p>
+      </div>
+      <Link
+        href={`/app/agents?focus=disruption:${focused.id}`}
+        className="flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-accent px-2.5 text-[12px] font-semibold text-white hover:bg-accent-strong"
+      >
+        Open in AI Agents
+        <ArrowRight className="size-3.5" aria-hidden />
+      </Link>
+    </div>
   );
 }
