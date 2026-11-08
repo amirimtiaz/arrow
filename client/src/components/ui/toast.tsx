@@ -86,5 +86,23 @@ export function useToast() {
 /** Turns a SpacetimeDB reducer error into a readable message. */
 export function errorMessage(err: unknown): string {
   if (err instanceof Error) return err.message.replace(/^SenderError:\s*/, '');
+  if (typeof err === 'string') return err;
+  // Some SDKs (e.g. Puter) reject with plain objects like { error: { code, message } } or { msg }.
+  if (err && typeof err === 'object') {
+    const o = err as Record<string, unknown>;
+    for (const key of ['message', 'msg', 'error', 'code']) {
+      const value = o[key];
+      if (typeof value === 'string' && value) return value;
+      if (value && typeof value === 'object') {
+        const nested = errorMessage(value);
+        if (nested && nested !== '[object Object]') return nested;
+      }
+    }
+    try {
+      return JSON.stringify(err).slice(0, 200);
+    } catch {
+      /* fall through */
+    }
+  }
   return String(err);
 }

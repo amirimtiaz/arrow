@@ -186,6 +186,22 @@ body {
   border-color: var(--warning);
 }
 
+/* Grok News Scout signal on the globe (real-world news, not a declared disruption). */
+.news-marker {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background: var(--violet);
+  color: #fff;
+  font-weight: 800;
+  font-size: 11px;
+  box-shadow: 0 0 0 3px rgba(167, 139, 250, 0.35);
+  pointer-events: auto;
+  cursor: help;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-soft-pulse,
   .disruption-marker::after {

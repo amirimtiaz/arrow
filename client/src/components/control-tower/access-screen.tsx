@@ -9,7 +9,7 @@
 import { KeyRound, Lock, RefreshCw, ShieldCheck, ShieldX, Unplug, UserCheck, WifiOff } from 'lucide-react';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { errorMessage } from '@/components/ui/toast';
-import { IR_DB, SPACETIME_URI } from '@/lib/spacetime/config';
+import { IR_DB, IR_URI } from '@/lib/spacetime/config';
 import { useIr, useMyAccess } from '@/lib/ir/client';
 import { formatDuration, tsMs, useNow } from './format';
 import { Button, cx, ErrorNote, Field, inputClass, Modal, Spinner } from './ui';
@@ -58,7 +58,7 @@ export function UnreachableScreen({ error, onRetry }: { error: string | null; on
             <h2 className="text-lg font-bold text-danger">IR server unreachable</h2>
             <p className="mt-1 text-sm leading-relaxed text-muted">
               The Control Tower runs on its own database (<span className="font-mono text-fg">{IR_DB}</span>), separate from Arrow
-              operations. It is not answering at <span className="font-mono text-fg">{SPACETIME_URI}</span>.
+              operations. It is not answering at <span className="font-mono text-fg">{IR_URI}</span>.
             </p>
             <p className="mt-2 text-sm leading-relaxed text-muted">
               On an isolated network, check that the IR laptop is running <span className="font-mono text-fg">spacetime start</span> and

@@ -2,6 +2,7 @@
 
 import clsx from 'clsx';
 import {
+  Activity,
   ArrowRightLeft,
   Brain,
   CheckCircle2,
@@ -13,6 +14,7 @@ import {
   MessageSquareText,
   Radio,
   Rocket,
+  Scale,
   ShieldCheck,
   Timer,
   Wrench,
@@ -123,9 +125,9 @@ export function AgentTrace({ run, disruption }: { run: AgentRun | undefined; dis
         ) : traceTab === 'options' ? (
           <OptionsTab options={options} proposals={proposals} />
         ) : traceTab === 'decision' ? (
-          <DecisionTab run={run} proposals={proposals} options={options} />
+          <DecisionTab run={run} proposals={proposals} options={options} steps={steps} />
         ) : (
-          <ExecutionTab run={run} proposals={proposals} options={options} disruption={disruption} />
+          <ExecutionTab run={run} proposals={proposals} options={options} disruption={disruption} steps={steps} />
         )}
       </div>
     </section>
@@ -298,14 +300,58 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
-function DecisionTab({ run, proposals, options }: { run: AgentRun; proposals: ActionProposal[]; options: RouteOption[] }) {
+/** The Risk Auditor's independent verdict on the proposal (proposer/critic debate). */
+function AuditCard({ steps }: { steps: AgentStep[] }) {
+  const review = steps.find((s) => s.agent === 'Risk Auditor' && s.tool === 'review_proposal');
+  if (!review) return null;
+  const audit = safeJson<{ verdict?: string; assessment?: string; concerns?: string[] }>(review.inputJson, {});
+  const kept = steps.find((s) => s.tool === 'keep_proposal');
+  const revised = steps.some((s) => s.agent === 'Recovery Planner' && s.tool === 'propose_action' && s.seq > review.seq);
+  const challenged = audit.verdict === 'challenge';
+  return (
+    <div className={clsx('rounded-lg border p-3', challenged ? 'border-warning/40 bg-warning-soft' : 'border-success/40 bg-success-soft')}>
+      <p className={clsx('flex items-center gap-1.5 text-[12px] font-bold', challenged ? 'text-warning' : 'text-success')}>
+        <Scale className="size-3.5" aria-hidden />
+        Risk Auditor {challenged ? 'challenged the plan' : 'concurs'}
+      </p>
+      {audit.assessment && <p className="mt-1 text-[12px] leading-relaxed text-muted">{audit.assessment}</p>}
+      {challenged && (audit.concerns?.length ?? 0) > 0 && (
+        <ul className="mt-1 list-disc space-y-0.5 pl-4 text-[11.5px] text-muted">
+          {audit.concerns!.map((c, i) => (
+            <li key={i}>{c}</li>
+          ))}
+        </ul>
+      )}
+      {challenged && (revised || kept) && (
+        <p className="mt-1.5 text-[11.5px] font-semibold text-fg">
+          Planner response: {revised ? 'revised the proposal (earlier one superseded).' : 'kept the proposal with a justification.'}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function DecisionTab({
+  run,
+  proposals,
+  options,
+  steps,
+}: {
+  run: AgentRun;
+  proposals: ActionProposal[];
+  options: RouteOption[];
+  steps: AgentStep[];
+}) {
   const profile = useMyProfile();
   const { conn } = useOps();
   const toast = useToast();
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState('');
   const isManager = profile?.role === 'manager';
-  const relevant = proposals.filter((p) => p.kind !== 'notify');
+  // Pending first; superseded drafts sink to the bottom.
+  const relevant = proposals
+    .filter((p) => p.kind !== 'notify')
+    .sort((a, b) => Number(a.status === 'superseded') - Number(b.status === 'superseded'));
 
   if (relevant.length === 0) {
     return (
@@ -336,6 +382,7 @@ function DecisionTab({ run, proposals, options }: { run: AgentRun; proposals: Ac
 
   return (
     <div className="space-y-2.5">
+      <AuditCard steps={steps} />
       {relevant.map((p) => {
         const option = options.find((o) => o.id === p.optionId);
         const awaiting = p.status === 'pending' && p.requiresApproval;
@@ -437,16 +484,62 @@ function ProposalStatus({ p }: { p: ActionProposal }) {
   );
 }
 
+interface RecoveryMetric {
+  metric: string;
+  at_approval: number;
+  now: number;
+  improved: boolean;
+}
+
+/** The Recovery Monitor's measured before/after (deterministic numbers from measure_recovery). */
+function VerifiedOutcome({ steps }: { steps: AgentStep[] }) {
+  const measured = [...steps].reverse().find((s) => s.agent === 'Recovery Monitor' && s.tool === 'measure_recovery');
+  if (!measured) return null;
+  const data = safeJson<{
+    metrics?: RecoveryMetric[];
+    affected_shipments?: { rerouted_moving: number; held: number; still_delayed: number };
+  }>(measured.outputJson, {});
+  const label: Record<string, string> = { on_time_pct: 'On-time', value_at_risk_usd: 'Value at risk', risk_index: 'Risk index' };
+  const fmt = (m: RecoveryMetric, v: number) =>
+    m.metric === 'value_at_risk_usd' ? formatUsd(v) : m.metric === 'on_time_pct' ? `${v}%` : String(v);
+  return (
+    <div className="rounded-lg border border-accent/40 bg-accent-soft p-3">
+      <p className="flex items-center gap-1.5 text-[12px] font-bold text-accent">
+        <Activity className="size-3.5" aria-hidden />
+        Verified outcome · Recovery Monitor
+      </p>
+      <div className="mt-2 grid grid-cols-3 gap-1.5 text-[11px]">
+        {(data.metrics ?? []).map((m) => (
+          <div key={m.metric} className="rounded-md bg-bg/60 px-1.5 py-1">
+            <p className="text-[9.5px] text-faint uppercase">{label[m.metric] ?? m.metric}</p>
+            <p className={clsx('font-bold tabular-nums', m.improved ? 'text-success' : 'text-fg')}>
+              {fmt(m, m.at_approval)} → {fmt(m, m.now)}
+            </p>
+          </div>
+        ))}
+      </div>
+      {data.affected_shipments && (
+        <p className="mt-1.5 text-[11px] text-muted">
+          {data.affected_shipments.rerouted_moving} re-planned shipments moving · {data.affected_shipments.held} held ·{' '}
+          {data.affected_shipments.still_delayed} still delayed
+        </p>
+      )}
+    </div>
+  );
+}
+
 function ExecutionTab({
   run,
   proposals,
   options,
   disruption,
+  steps,
 }: {
   run: AgentRun;
   proposals: ActionProposal[];
   options: RouteOption[];
   disruption: Disruption | undefined;
+  steps: AgentStep[];
 }) {
   const executed = proposals.filter((p) => p.status === 'executed');
   const profile = useMyProfile();
@@ -497,6 +590,7 @@ function ExecutionTab({
           </div>
         );
       })}
+      <VerifiedOutcome steps={steps} />
       {run.summary && (
         <div className="rounded-lg border border-line bg-panel-2 p-3">
           <p className="text-[10px] font-bold tracking-wide text-muted uppercase">Run summary</p>

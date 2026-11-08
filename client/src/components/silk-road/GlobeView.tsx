@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Globe, { type GlobeMethods } from 'react-globe.gl';
 import * as THREE from 'three';
-import type { Disruption, Node, Org, Route } from '@/module_bindings/ops/types';
+import type { Disruption, NewsSignal, Node, Org, Route } from '@/module_bindings/ops/types';
 import type { Network } from '@/lib/ops/hooks';
 import { NODE_KIND, ROUTE_STATUS } from '@/lib/ops/status';
 import { readCssVars, useTheme } from '@/lib/theme';
@@ -47,6 +47,7 @@ export interface GlobeViewProps {
   org: Org;
   network: Network;
   disruptions: Disruption[];
+  signals: NewsSignal[];
   focused: Disruption | undefined;
   selectedRouteId: number | null;
   labelSize: number;
@@ -129,6 +130,11 @@ export default function GlobeView(props: GlobeViewProps) {
   );
 
   const activeDisruptions = useMemo(() => disruptions.filter((d) => d.status !== 'resolved'), [disruptions]);
+  // "!" for declared disruptions, "N" for undecided Grok news signals.
+  const markers = useMemo(
+    () => [...activeDisruptions, ...props.signals.filter((s) => s.status === 'new')],
+    [activeDisruptions, props.signals]
+  );
 
   // Fly to the workspace when it changes, then to the focused disruption.
   useEffect(() => {
@@ -262,6 +268,16 @@ export default function GlobeView(props: GlobeViewProps) {
     onFocusRef.current = onFocusDisruption;
   }, [onFocusDisruption]);
   const markerElement = useCallback((d: object) => {
+    if ('headline' in d) {
+      const signal = d as NewsSignal;
+      const el = document.createElement('span');
+      el.className = 'news-marker';
+      el.textContent = 'N';
+      el.setAttribute('role', 'img');
+      el.setAttribute('aria-label', `Live news signal: ${signal.headline}`);
+      el.title = `Live news (Grok): ${signal.headline}`;
+      return el;
+    }
     const disruption = d as Disruption;
     const el = document.createElement('button');
     el.type = 'button';
@@ -384,9 +400,9 @@ export default function GlobeView(props: GlobeViewProps) {
           ringMaxRadius={(d: object) => Math.max(((d as Disruption).radiusKm / 111) * 2.2, 2.2 * scale)}
           ringPropagationSpeed={(d: object) => Math.max(((d as Disruption).radiusKm / 111) * 1.6, 1.4 * scale)}
           ringRepeatPeriod={1100}
-          htmlElementsData={activeDisruptions}
-          htmlLat={(d: object) => (d as Disruption).lat}
-          htmlLng={(d: object) => (d as Disruption).lng}
+          htmlElementsData={markers}
+          htmlLat={(d: object) => (d as Disruption | NewsSignal).lat}
+          htmlLng={(d: object) => (d as Disruption | NewsSignal).lng}
           htmlAltitude={0.02}
           htmlElement={markerElement}
           htmlTransitionDuration={0}

@@ -13,7 +13,8 @@ import { createLiveClient } from '@/lib/spacetime/live-client';
 const opsClient = createLiveClient<DbConnection>({
   dbName: OPS_DB,
   uri: SPACETIME_URI,
-  tokenKey: 'arrow-ops-token',
+  // Identity tokens only work on the server that issued them, so key them by server + database.
+  tokenKey: `arrow-ops-token@${SPACETIME_URI}/${OPS_DB}`,
   builder: () => DbConnection.builder(),
   tables: [
     'org',
@@ -34,6 +35,8 @@ const opsClient = createLiveClient<DbConnection>({
     'riskSample',
     'telemetry',
     'securityEvent',
+    'newsSignal',
+    'newsScan',
   ],
 });
 
@@ -101,6 +104,8 @@ export function OpsProvider({ children }: { children: ReactNode }) {
       tables.riskSample.where((r) => r.orgId.eq(orgId)),
       tables.telemetry.where((r) => r.orgId.eq(orgId)),
       tables.securityEvent.where((r) => r.orgId.eq(orgId)),
+      tables.newsSignal.where((r) => r.orgId.eq(orgId)),
+      tables.newsScan.where((r) => r.orgId.eq(orgId)),
     ],
     [orgId]
   );

@@ -166,6 +166,21 @@ export default function FlatMapView(props: GlobeViewProps) {
             {activeDisruptions.map((d) => (
               <DisruptionPin key={String(d.id)} disruption={d} projection={projection} onClick={() => props.onFocusDisruption(d.id)} />
             ))}
+            {props.signals
+              .filter((s) => s.status === 'new')
+              .map((s) => {
+                const xy = projection([s.lng, s.lat]);
+                if (!xy) return null;
+                return (
+                  <g key={`n${s.id}`} transform={`translate(${xy[0]},${xy[1]})`} role="img" aria-label={`Live news signal: ${s.headline}`}>
+                    <rect x={-9} y={-9} width={18} height={18} rx={5} fill="var(--violet)" />
+                    <text textAnchor="middle" y={4} fontSize={11} fontWeight={800} fill="#fff">
+                      N
+                    </text>
+                    <title>{`Live news (Grok): ${s.headline}`}</title>
+                  </g>
+                );
+              })}
           </g>
         </svg>
       )}

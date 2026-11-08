@@ -10,13 +10,14 @@
  */
 import { useMemo, type ReactNode } from 'react';
 import { DbConnection, tables } from '@/module_bindings/ir';
-import { IR_DB, SPACETIME_URI } from '@/lib/spacetime/config';
+import { IR_DB, IR_URI } from '@/lib/spacetime/config';
 import { createLiveClient } from '@/lib/spacetime/live-client';
 
 const irClient = createLiveClient<DbConnection>({
   dbName: IR_DB,
-  uri: SPACETIME_URI,
-  tokenKey: 'arrow-ir-token',
+  uri: IR_URI,
+  // Keyed by server + database: an identity is only valid on the server that issued it.
+  tokenKey: `arrow-ir-token@${IR_URI}/${IR_DB}`,
   builder: () => DbConnection.builder(),
   tables: ['myAccess', 'irStatus', 'irMembers', 'irInvites', 'irIncidents', 'irTimeline', 'irScope', 'irTasks', 'irMessages', 'irAudit'],
 });

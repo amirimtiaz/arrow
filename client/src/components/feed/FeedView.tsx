@@ -26,6 +26,7 @@ const CATEGORY_LABEL: Record<string, string> = {
   action: 'Action',
   cyber: 'Cyber',
   briefing: 'Briefing',
+  news: 'Live news',
 };
 
 export function FeedView() {

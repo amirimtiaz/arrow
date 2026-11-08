@@ -2,3 +2,8 @@
 export const SPACETIME_URI = process.env.NEXT_PUBLIC_SPACETIME_HOST ?? 'ws://127.0.0.1:3000';
 export const OPS_DB = process.env.NEXT_PUBLIC_OPS_DB ?? 'arrow-ops';
 export const IR_DB = process.env.NEXT_PUBLIC_IR_DB ?? 'arrow-ir';
+/**
+ * The Control Tower can live on its own server (e.g. a self-hosted laptop on an
+ * isolated LAN) while operations run on Maincloud. Defaults to the ops server.
+ */
+export const IR_URI = process.env.NEXT_PUBLIC_IR_HOST ?? SPACETIME_URI;

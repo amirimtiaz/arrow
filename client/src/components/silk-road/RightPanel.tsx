@@ -4,7 +4,7 @@ import clsx from 'clsx';
 import { Bot, CircleAlert, Cpu, Eye, ShieldCheck, TriangleAlert } from 'lucide-react';
 import { useMemo } from 'react';
 import type { AgentRun, Disruption } from '@/module_bindings/ops/types';
-import { formatPct, formatUsd, timeAgo, tsToDate } from '@/lib/format';
+import { formatPct, formatUsd, safeJson, timeAgo, tsToDate } from '@/lib/format';
 import { AGENTS, prettyModel, useAgentService } from '@/lib/ops/agent';
 import { useKpis, useRunForDisruption, useRunSteps } from '@/lib/ops/hooks';
 import { DISRUPTION_KIND, riskLevel, SEVERITY } from '@/lib/ops/status';
@@ -17,7 +17,7 @@ export function RightPanel() {
   const run = useRunForDisruption(disruption?.id);
   return (
     <aside
-      className="flex w-[384px] shrink-0 flex-col gap-4 overflow-hidden border-l border-line bg-elevated p-4"
+      className="flex w-[384px] shrink-0 flex-col gap-3 overflow-hidden border-l border-line bg-elevated p-4"
       aria-label="Risk and agent panel"
     >
       <RiskAssessment disruption={disruption} />
@@ -113,22 +113,24 @@ function AgentRoster({ run, disruption }: { run: AgentRun | undefined; disruptio
       AGENTS.map((agent) => {
         const mine = steps.filter((s) => s.agent === agent.name);
         const last = mine.at(-1);
-        const cyberOnly = agent.name === 'Cyber Triage' && disruption?.kind !== 'cyber';
+        const notNeeded = agent.when === 'cyber' && !!disruption && disruption.kind !== 'cyber';
+        const verdict =
+          agent.name === 'Risk Auditor'
+            ? safeJson<{ verdict?: string }>(mine.find((s) => s.tool === 'review_proposal')?.inputJson ?? '', {}).verdict
+            : undefined;
         let status: { label: string; className: string } = { label: 'Idle', className: 'text-muted bg-panel-2' };
-        if (cyberOnly) status = { label: 'Not needed', className: 'text-faint bg-panel-2' };
+        if (notNeeded) status = { label: 'Not needed', className: 'text-faint bg-panel-2' };
         else if (run?.status === 'failed' && run.activeAgent === agent.name)
           status = { label: 'Failed', className: 'text-danger bg-danger-soft' };
         else if (run?.status === 'running' && run.activeAgent === agent.name)
-          status = { label: 'Processing', className: 'text-accent bg-accent-soft' };
+          status = { label: 'Working', className: 'text-accent bg-accent-soft animate-soft-pulse' };
+        else if (verdict === 'challenge') status = { label: 'Challenged', className: 'text-warning bg-warning-soft' };
+        else if (verdict === 'concur') status = { label: 'Concurs', className: 'text-success bg-success-soft' };
         else if (mine.length > 0) status = { label: 'Done', className: 'text-success bg-success-soft' };
-        const progress = cyberOnly
-          ? 0
-          : status.label === 'Done'
-            ? 100
-            : status.label === 'Processing'
-              ? Math.min(90, 20 + mine.length * 15)
-              : 0;
-        return { ...agent, status, progress, detail: cyberOnly ? 'Only engaged for cyber disruptions' : (last?.title ?? agent.role) };
+        else if (agent.when === 'approved' && run?.status === 'awaiting_approval')
+          status = { label: 'After approval', className: 'text-faint bg-panel-2' };
+        const detail = notNeeded ? 'Only engaged for cyber disruptions' : (last?.title ?? agent.role);
+        return { ...agent, status, detail, steps: mine.length };
       }),
     [steps, run, disruption]
   );
@@ -159,31 +161,26 @@ function AgentRoster({ run, disruption }: { run: AgentRun | undefined; disruptio
           {service.message}
         </p>
       )}
-      <ul className="mt-2 space-y-1.5">
-        {roster.map((agent) => (
-          <li key={agent.name} className="rounded-lg border border-line bg-panel p-2.5">
-            <div className="flex items-center gap-2">
-              <span className="grid size-7 shrink-0 place-items-center rounded-md bg-accent-soft text-accent">
-                <Cpu className="size-3.5" aria-hidden />
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="text-[12.5px] font-bold text-fg">{agent.name}</p>
-                <p className="truncate text-[11px] text-muted" title={agent.detail}>
-                  {agent.detail}
-                </p>
-              </div>
-              <span className={clsx('rounded-md px-1.5 py-0.5 text-[9.5px] font-bold uppercase', agent.status.className)}>
-                {agent.status.label}
-              </span>
+      <ol className="mt-2 divide-y divide-line overflow-hidden rounded-lg border border-line bg-panel">
+        {roster.map((agent, i) => (
+          <li key={agent.name} className="flex items-center gap-2 px-2.5 py-1.5" title={agent.detail}>
+            <span className="grid size-5 shrink-0 place-items-center rounded bg-accent-soft text-[10px] font-bold text-accent">
+              {i + 1}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="flex items-center gap-1.5 text-[12px] font-bold text-fg">
+                <Cpu className="size-3 text-faint" aria-hidden />
+                {agent.name}
+                {agent.steps > 0 && <span className="text-[10px] font-normal text-faint">{agent.steps} steps</span>}
+              </p>
+              <p className="truncate text-[10.5px] text-muted">{agent.detail}</p>
             </div>
-            {agent.progress > 0 && (
-              <div className="mt-2">
-                <ProgressBar value={agent.progress} tone={agent.status.label === 'Done' ? 'success' : 'accent'} />
-              </div>
-            )}
+            <span className={clsx('shrink-0 rounded-md px-1.5 py-0.5 text-[9.5px] font-bold uppercase', agent.status.className)}>
+              {agent.status.label}
+            </span>
           </li>
         ))}
-      </ul>
+      </ol>
       {service.model && <p className="mt-1.5 text-[10.5px] text-faint">Model: {prettyModel(service.model)} via build.nvidia.com</p>}
     </section>
   );

@@ -6,7 +6,7 @@ import dynamic from 'next/dynamic';
 import { useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { useCurrentOrg, useOps } from '@/lib/ops/client';
-import { useDisruptions, useNetwork, useOptions, useRunForDisruption } from '@/lib/ops/hooks';
+import { useDisruptions, useNetwork, useNewsSignals, useOptions, useRunForDisruption } from '@/lib/ops/hooks';
 import { MODE, ROUTE_STATUS } from '@/lib/ops/status';
 import { TopBarActions, TopBarTitle } from '@/components/shell/TopBarSlots';
 import { Button, Dialog } from '@/components/ui/primitives';
@@ -15,6 +15,7 @@ import { BottomStrip } from './BottomStrip';
 import { KpiStrip } from './KpiStrip';
 import { MapControls } from './MapControls';
 import { RightPanel } from './RightPanel';
+import { NewsSignals } from './NewsSignals';
 import { ScenarioPanel } from './ScenarioPanel';
 import { SilkRoadStateProvider, useFocusedDisruption, useSilkRoad } from './SilkRoadState';
 
@@ -49,6 +50,7 @@ function SilkRoadLayout() {
   const org = useCurrentOrg();
   const network = useNetwork();
   const { all } = useDisruptions();
+  const signals = useNewsSignals();
   const focused = useFocusedDisruption();
   const { status, ready, error, retry, resetIdentity } = useOps();
   const ui = useSilkRoad();
@@ -60,6 +62,7 @@ function SilkRoadLayout() {
     org,
     network,
     disruptions: all,
+    signals,
     focused,
     selectedRouteId: ui.selectedRouteId,
     labelSize: ui.labelSize,
@@ -108,13 +111,16 @@ function SilkRoadLayout() {
             <div className="hidden xl:block">
               <KpiStrip />
             </div>
-            <ScenarioPanel />
+            <div className="flex flex-col items-end gap-2">
+              <ScenarioPanel />
+              <NewsSignals />
+            </div>
           </div>
 
           <button
             type="button"
             onClick={() => setShowShortcuts(true)}
-            className="absolute right-4 bottom-4 z-10 flex items-center gap-1.5 rounded-lg border border-line bg-panel/95 px-2.5 py-1.5 text-[11px] text-muted shadow-panel hover:text-fg"
+            className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-lg border border-line bg-panel/95 px-2.5 py-1.5 text-[11px] text-muted shadow-panel hover:text-fg"
           >
             <Keyboard className="size-3.5" aria-hidden />
             Press <kbd className="rounded border border-line px-1 font-mono">?</kbd> for shortcuts

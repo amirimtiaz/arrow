@@ -8,7 +8,7 @@ import { formatClock, formatHours, formatInt, timeAgo, tsToMs } from '@/lib/form
 import { useOpsRows, useOrgSelection, useCurrentOrg } from '@/lib/ops/client';
 import { useNetwork, useRiskSeries } from '@/lib/ops/hooks';
 import { ROUTE_STATUS } from '@/lib/ops/status';
-import { useWorker, type WorkerState } from '@/lib/use-worker';
+import { useAnalytics, type AnalyticsState } from '@/lib/use-analytics';
 import { TopBarTitle } from '@/components/shell/TopBarSlots';
 import { EmptyState, Panel, SectionLabel, StatusChip } from '@/components/ui/primitives';
 import { RISK_ALERT_THRESHOLD } from '@/components/silk-road/BottomStrip';
@@ -54,11 +54,11 @@ export function AnalyticsView() {
   const { orgId } = useOrgSelection();
   const org = useCurrentOrg();
   const [hours, setHours] = useState(24);
-  const risk = useWorker<{ series: RiskPoint[] }>(`/analytics/risk?orgId=${orgId}&hours=${hours}`);
-  const security = useWorker<{ series: SecurityPoint[] }>(`/analytics/security?orgId=${orgId}&minutes=60`, 10_000);
-  const top = useWorker<{ routes: TopRoute[] }>(`/analytics/top-routes?orgId=${orgId}&hours=${hours}`);
-  const summary = useWorker<{ samples: number; since: string | null }>(`/analytics/summary?orgId=${orgId}`, 60_000);
-  const anomalies = useWorker<{ anomalies: Anomaly[] }>(`/analytics/anomalies?orgId=${orgId}`, 10_000);
+  const risk = useAnalytics<{ series: RiskPoint[] }>(`/risk?orgId=${orgId}&hours=${hours}`);
+  const security = useAnalytics<{ series: SecurityPoint[] }>(`/security?orgId=${orgId}&minutes=60`, 10_000);
+  const top = useAnalytics<{ routes: TopRoute[] }>(`/top-routes?orgId=${orgId}&hours=${hours}`);
+  const summary = useAnalytics<{ samples: number; since: string | null }>(`/summary?orgId=${orgId}`, 60_000);
+  const anomalies = useAnalytics<{ anomalies: Anomaly[] }>(`/anomalies?orgId=${orgId}`, 10_000);
   const tigerMissing = risk.status === 'tiger_not_configured';
   const workerDown = risk.status === 'error';
 
@@ -82,12 +82,12 @@ export function AnalyticsView() {
             <Database className={clsx('mt-0.5 size-5 shrink-0', workerDown ? 'text-danger' : 'text-warning')} aria-hidden />
             <div className="text-sm">
               <p className={clsx('font-bold', workerDown ? 'text-danger' : 'text-warning')}>
-                {workerDown ? 'Analytics worker offline' : 'Tiger Data not connected'}
+                {workerDown ? 'Analytics unavailable' : 'Tiger Data not connected'}
               </p>
               <p className="mt-0.5 text-muted">
                 {workerDown
                   ? risk.message
-                  : 'Historical charts and anomaly detection need Tiger Data. Add TIGER_DATABASE_URL to worker/.env, run `npm run tiger:setup` in worker/, then restart the worker. Live SpacetimeDB panels below keep working.'}
+                  : 'Historical charts and anomaly detection need Tiger Data. Set TIGER_DATABASE_URL for the website and the worker, then run `npm --prefix worker run tiger:setup`. Live SpacetimeDB panels below keep working.'}
               </p>
             </div>
           </div>
@@ -272,7 +272,7 @@ function ChartFrame<T>({
   empty,
   children,
 }: {
-  state: WorkerState<T>;
+  state: AnalyticsState<T>;
   height: number;
   empty(d: T): boolean;
   children(d: T): ReactNode;
@@ -300,7 +300,7 @@ function ChartFrame<T>({
   );
 }
 
-function TopRoutesPanel({ state, hours }: { state: WorkerState<{ routes: TopRoute[] }>; hours: number }) {
+function TopRoutesPanel({ state, hours }: { state: AnalyticsState<{ routes: TopRoute[] }>; hours: number }) {
   const network = useNetwork();
   return (
     <Panel className="col-span-2 p-4">
@@ -346,7 +346,7 @@ function TopRoutesPanel({ state, hours }: { state: WorkerState<{ routes: TopRout
   );
 }
 
-function AnomalyPanel({ state }: { state: WorkerState<{ anomalies: Anomaly[] }> }) {
+function AnomalyPanel({ state }: { state: AnalyticsState<{ anomalies: Anomaly[] }> }) {
   return (
     <Panel className="col-span-2 p-4">
       <SectionLabel icon={Radar}>Anomaly detections · SQL z-score</SectionLabel>

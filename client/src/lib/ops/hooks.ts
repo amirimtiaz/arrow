@@ -145,6 +145,20 @@ export function useFeed() {
   return useMemo(() => rows.filter((f) => f.orgId === orgId).sort((a, b) => tsToMs(b.ts) - tsToMs(a.ts)), [rows, orgId]);
 }
 
+/** Grok News Scout signals for the workspace, newest first. */
+export function useNewsSignals() {
+  const { orgId } = useOrgSelection();
+  const rows = useOpsRows('newsSignal');
+  return useMemo(() => rows.filter((s) => s.orgId === orgId).sort((a, b) => tsToMs(b.ts) - tsToMs(a.ts)), [rows, orgId]);
+}
+
+/** The most recent Grok News Scout scan for the workspace. */
+export function useLatestNewsScan() {
+  const { orgId } = useOrgSelection();
+  const rows = useOpsRows('newsScan');
+  return useMemo(() => rows.filter((s) => s.orgId === orgId).sort((a, b) => tsToMs(b.startedAt) - tsToMs(a.startedAt))[0], [rows, orgId]);
+}
+
 /** Points for a route as {lat,lng}; air routes are drawn as arcs elsewhere. */
 export function routePoints(route: Route) {
   return route.waypoints.map((p) => ({ lat: p.lat, lng: p.lng }));
