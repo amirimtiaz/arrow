@@ -92,6 +92,13 @@ async function start() {
   ops.db.actionProposal.onUpdate((_ctx, before, after) => onExecuted(before, after));
   for (const d of ops.db.disruption.iter()) onDisruption(d);
   for (const r of ops.db.agentRun.iter()) onAsk(r);
+  // A question still "running" at startup was orphaned by a worker restart: fail it visibly instead of a forever spinner.
+  for (const r of ops.db.agentRun.iter()) {
+    if (r.trigger !== 'ask' || r.status !== 'running') continue;
+    ops.reducers
+      .finishAgentRun({ runId: r.id, status: 'failed', summary: '', answer: '', error: 'The agent worker restarted while answering. Please ask again.' })
+      .catch(() => undefined);
+  }
 
 
   if (tigerConfigured) {

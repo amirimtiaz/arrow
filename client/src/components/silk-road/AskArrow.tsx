@@ -14,16 +14,18 @@ import { useMyProfile, useOps, useCurrentOrg } from '@/lib/ops/client';
 import { useAskRuns, useRunSteps } from '@/lib/ops/hooks';
 import { RichText } from '@/components/ui/RichText';
 import { errorMessage, useToast } from '@/components/ui/toast';
+import { DashboardArtifact, parseDashboard, type DashboardData } from './DashboardArtifact';
 import { useSilkRoad } from './SilkRoadState';
 
 const SUGGESTIONS: Record<string, string[]> = {
   gold: [
+    'Build me a dashboard of value at risk by lane, mode and status',
     'Which lanes carry the most value at risk right now?',
     'Brief executives on today’s disruptions',
     'How exposed are we to the Suez Canal?',
   ],
-  silver: ['Which stores depend on the Texas DC?', 'How exposed are our cold-chain vaccine lanes?', 'Summarize vendor risk for executives'],
-  bronze: ['What deliveries are due today?', 'Which suppliers are our biggest risk?', 'What should I do if produce is late?'],
+  silver: ['Build a dashboard of shipments by status and destination', 'Which stores depend on the Texas DC?', 'How exposed are our cold-chain vaccine lanes?', 'Summarize vendor risk for executives'],
+  bronze: ['Make a dashboard of deliveries by status and supplier', 'What deliveries are due today?', 'Which suppliers are our biggest risk?', 'What should I do if produce is late?'],
 };
 
 export function AskArrow() {
@@ -149,6 +151,11 @@ function Exchange({ run }: { run: AgentRun }) {
   const [open, setOpen] = useState(false);
   const toolSteps = steps.filter((s) => s.kind === 'tool_call');
   const working = run.status === 'queued' || run.status === 'running';
+  // Dashboards the agent built with build_dashboard (numbers computed by the tool, not the model).
+  const dashboards = toolSteps
+    .filter((s) => s.tool === 'build_dashboard' && s.outputJson)
+    .map((s) => ({ id: String(s.id), data: parseDashboard(s.outputJson) }))
+    .filter((d): d is { id: string; data: DashboardData } => d.data !== null);
 
   return (
     <div className="space-y-2">
@@ -169,6 +176,9 @@ function Exchange({ run }: { run: AgentRun }) {
           )}
           {run.status === 'failed' && <p className="text-danger">The agent could not answer: {run.error || 'unknown error'}.</p>}
           {run.answer && <RichText text={run.answer} className="leading-relaxed" />}
+          {dashboards.map((d) => (
+            <DashboardArtifact key={d.id} data={d.data} />
+          ))}
           {toolSteps.length > 0 && (
             <button
               type="button"

@@ -550,6 +550,107 @@ export const getNetworkOverview = tool({
   },
 });
 
+const DASH_METRICS = ['shipments', 'value_usd', 'value_at_risk_usd', 'lanes', 'units'] as const;
+const DASH_GROUPS = ['route_status', 'mode', 'shipment_status', 'lane', 'destination_country', 'destination_hub', 'priority', 'goods'] as const;
+const LANE_GROUPS = new Set(['route_status', 'mode', 'lane', 'destination_country', 'destination_hub']);
+
+/**
+ * Builds a real dashboard: the model chooses the charts (metric × grouping × chart type) from a fixed menu, and this
+ * code computes every number from live SpacetimeDB rows. The UI renders the result as charts with PNG/CSV downloads.
+ */
+export const buildDashboard = tool({
+  name: 'build_dashboard',
+  description:
+    'Build a visual dashboard (charts the UI renders, downloadable as PNG images and CSV for Excel, Google Sheets, Tableau or Power BI). ' +
+    'Pick 2-4 charts. Each chart groups a metric by a dimension. Use it whenever the user asks for a dashboard, chart, graph, visualization, export, report, Excel, CSV, Tableau or Power BI.',
+  schema: z.object({
+    title: z.string().min(3).max(80),
+    charts: z
+      .array(
+        z.object({
+          title: z.string().min(3).max(60),
+          type: z.enum(['bar', 'pie', 'table']),
+          metric: z.enum(DASH_METRICS),
+          group_by: z.enum(DASH_GROUPS),
+          top: z.number().int().min(3).max(12).optional(),
+        })
+      )
+      .min(1)
+      .max(4),
+  }),
+  run: ({ title, charts }, ctx) => {
+    const routes = orgRoutes(ctx).filter((r) => r.status !== 'standby');
+    const routeById = new Map(routes.map((r) => [r.id, r]));
+    const shipments = orgShipments(ctx).filter((s) => routeById.has(s.routeId));
+    const nodeName = (id: number) => ctx.ops.db.node.id.find(id);
+    const atRisk = (s: (typeof shipments)[number]) => {
+      const r = routeById.get(s.routeId)!;
+      return s.status === 'delayed' || s.status === 'held' || r.status === 'disrupted' || r.status === 'at_risk';
+    };
+    const routeKey = (r: (typeof routes)[number], by: string): string => {
+      if (by === 'route_status') return r.status.replace('_', ' ');
+      if (by === 'mode') return r.mode;
+      if (by === 'lane') return r.label;
+      const node = nodeName(r.toNodeId);
+      if (by === 'destination_country') return node?.country ?? 'Unknown';
+      return node?.name ?? 'Unknown';
+    };
+
+    const built = charts.map((c) => {
+      const totals = new Map<string, number>();
+      const add = (k: string, v: number) => totals.set(k, (totals.get(k) ?? 0) + v);
+      if (c.metric === 'lanes' && LANE_GROUPS.has(c.group_by)) {
+        for (const r of routes) add(routeKey(r, c.group_by), 1);
+      } else {
+        for (const s of shipments) {
+          const r = routeById.get(s.routeId)!;
+          const key =
+            c.group_by === 'shipment_status'
+              ? s.status.replace('_', ' ')
+              : c.group_by === 'priority'
+                ? s.priority
+                : c.group_by === 'goods'
+                  ? s.goods
+                  : routeKey(r, c.group_by);
+          const v =
+            c.metric === 'value_usd'
+              ? s.valueUsd
+              : c.metric === 'value_at_risk_usd'
+                ? atRisk(s)
+                  ? s.valueUsd
+                  : 0
+                : c.metric === 'units'
+                  ? s.units
+                  : 1;
+          add(key, v);
+        }
+      }
+      const sorted = [...totals.entries()].filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
+      const top = c.top ?? 8;
+      const rows = sorted.slice(0, top).map(([label, value]) => ({ label, value: Math.round(value) }));
+      const rest = sorted.slice(top).reduce((n, [, v]) => n + v, 0);
+      if (rest > 0) rows.push({ label: 'Other', value: Math.round(rest) });
+      const metric = c.metric === 'lanes' && !LANE_GROUPS.has(c.group_by) ? 'shipments' : c.metric;
+      return { title: c.title, type: c.type, metric, group_by: c.group_by, rows };
+    });
+
+    const value = shipments.reduce((n, s) => n + s.valueUsd, 0);
+    const risky = shipments.filter(atRisk);
+    const late = shipments.filter((s) => s.status === 'delayed' || s.status === 'held').reduce((n, s) => n + s.valueUsd, 0);
+    const kpis = [
+      { label: 'Shipments in transit', value: shipments.length, format: 'number' },
+      { label: 'Value in transit', value: Math.round(value), format: 'usd' },
+      { label: 'Value at risk', value: Math.round(risky.reduce((n, s) => n + s.valueUsd, 0)), format: 'usd' },
+      { label: 'On-time (by value)', value: value > 0 ? round(100 * (1 - late / value)) : 100, format: 'pct' },
+      { label: 'Lanes disrupted', value: routes.filter((r) => r.status === 'disrupted').length, format: 'number' },
+    ];
+    return {
+      result: { title, generated_at: new Date().toISOString(), kpis, charts: built },
+      summary: `Built dashboard "${title}" with ${built.length} chart${built.length === 1 ? '' : 's'}`,
+    };
+  },
+});
+
 export const listRoutes = tool({
   name: 'list_routes',
   description: 'List lanes with status, mode, ETA, shipment count and value in transit. Filter by status or mode; sorted by value.',
@@ -719,4 +820,4 @@ export const AUDITOR_TOOLS = [getCurrentProposal, getRouteOptions, reviewProposa
 export const REVISION_TOOLS = [getRouteOptions, proposeAction, keepProposal];
 export const MONITOR_TOOLS = [measureRecovery, postBriefing, finishRun];
 export const CYBER_TOOLS = [getDisruption, getIrHints, draftIrIncident];
-export const ASK_TOOLS = [submitPlan, getNetworkOverview, listRoutes, listShipments, queryRouteHistory, checkVendorRisk, postBriefing];
+export const ASK_TOOLS = [submitPlan, getNetworkOverview, listRoutes, listShipments, queryRouteHistory, checkVendorRisk, buildDashboard, postBriefing];

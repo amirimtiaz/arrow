@@ -431,7 +431,7 @@ async function handleAgentChat(ops: Ops, queued: AgentRun, ctx: ToolContext, log
         const persona = CHAT_PERSONAS[key];
         const others = chosen.filter((k) => k !== key).map((k) => CHAT_PERSONAS[k].name);
         const result = await runAgent(
-          { name: persona.name, system: personaPrompt(org, key, others), tools: ASK_TOOLS.filter((t) => t.name !== 'post_briefing'), maxTurns: 4 },
+          { name: persona.name, system: personaPrompt(org, key, others), tools: ASK_TOOLS.filter((t) => t.name !== 'post_briefing' && t.name !== 'build_dashboard'), maxTurns: 4 },
           question,
           ctx,
           log
