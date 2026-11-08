@@ -162,31 +162,10 @@ body {
   }
 }
 
-/* Header nav clouds bob gently, each on its own beat (site-header.tsx sets the timing). */
-@keyframes cloud-float {
-  0%,
-  100% {
-    transform: none;
-  }
-  50% {
-    transform: translateY(-3px);
-  }
-}
-
-.nav-cloud {
-  animation: cloud-float 6.5s ease-in-out infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .nav-cloud {
-    animation: none;
-  }
-}
-
 /*
  * Landing "problem" archery blocks (components/landing/archery-blocks.tsx). The script arms the row while it is
  * below the fold, then sets data-archery="hit" when it scrolls in: arrows fly in one by one (--i staggers them) and
- * each face thuds as its arrow lands.
+ * a puff of splinters marks where each one misses.
  */
 @keyframes archery-hit {
   0% {
@@ -216,17 +195,22 @@ body {
   }
 }
 
-@keyframes archery-thud {
-  0%,
-  100% {
-    transform: none;
+@keyframes archery-burst {
+  0% {
+    opacity: 0;
+    transform: scale(0.3);
   }
-  35% {
-    transform: scale(0.965) translateX(1.5px);
+  55% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+    transform: none;
   }
 }
 
-[data-archery='armed'] .archery-arrow {
+[data-archery='armed'] .archery-arrow,
+[data-archery='armed'] .archery-burst {
   opacity: 0;
 }
 
@@ -235,9 +219,9 @@ body {
   animation-delay: calc(var(--i, 0) * 170ms);
 }
 
-[data-archery='hit'] .archery-face {
-  animation: archery-thud 340ms ease-out both;
-  animation-delay: calc(var(--i, 0) * 170ms + 460ms);
+[data-archery='hit'] .archery-burst {
+  animation: archery-burst 380ms ease-out both;
+  animation-delay: calc(var(--i, 0) * 170ms + 440ms);
 }
 
 .disruption-marker {

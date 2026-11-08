@@ -1,5 +1,5 @@
 import clsx from 'clsx';
-import { BrainCircuit, ChartSpline, Earth, ShieldCheck, type LucideIcon } from 'lucide-react';
+import Image from 'next/image';
 import type { ReactNode } from 'react';
 import { SectionIntro } from './section-intro';
 import { CONTAINER, EYEBROW } from './styles';
@@ -78,7 +78,9 @@ function RiskSparkline() {
 interface Pillar {
   name: string;
   kicker: string;
-  icon: LucideIcon;
+  /** Bundled stock photo (see public/images/CREDITS.md). */
+  /** `className` adjusts one photo's crop. */
+  photo: { src: string; alt: string; className?: string };
   body: string;
   poweredBy: string;
   detail: ReactNode;
@@ -88,7 +90,12 @@ const PILLARS: Pillar[] = [
   {
     name: 'Silk Road',
     kicker: 'Live 3D globe',
-    icon: Earth,
+    // Zoomed in past the faint frame NASA's scan leaves around the globe.
+    photo: {
+      src: '/images/landing/platform-globe.jpg',
+      alt: 'The whole Earth seen from space, with clouds over Africa.',
+      className: 'scale-[1.5]',
+    },
     body: 'Every supplier, port, warehouse and lane on one globe. When a disruption hits, affected routes turn red and the blast radius is clear at a glance.',
     poweredBy: 'SpacetimeDB',
     detail: <RouteLegend />,
@@ -96,7 +103,7 @@ const PILLARS: Pillar[] = [
   {
     name: 'Agentic response',
     kicker: 'Investigates on its own',
-    icon: BrainCircuit,
+    photo: { src: '/images/landing/platform-agents.jpg', alt: 'A glowing brain drawn on a computer circuit board.' },
     body: 'Nemotron agents start the moment a disruption appears. They plan, call tools, compare options and recommend. A human approves before anything changes.',
     poweredBy: 'NVIDIA Nemotron',
     detail: <TracePreview />,
@@ -104,7 +111,7 @@ const PILLARS: Pillar[] = [
   {
     name: 'Control Tower',
     kicker: 'Cyber incident command',
-    icon: ShieldCheck,
+    photo: { src: '/images/landing/platform-control-tower.jpg', alt: 'A red padlock resting on a black computer keyboard.' },
     body: 'An isolated, invite-only command center for cyber incidents: documentation, scope of affected data, real-time chat and a tamper-evident audit log.',
     poweredBy: 'Isolated SpacetimeDB',
     detail: <TowerChips />,
@@ -112,7 +119,7 @@ const PILLARS: Pillar[] = [
   {
     name: 'Analytics',
     kicker: 'History and anomalies',
-    icon: ChartSpline,
+    photo: { src: '/images/landing/platform-analytics.jpg', alt: 'Performance analytics charts on a laptop screen.' },
     body: 'Time-series history of route risk, delays and security events. SQL anomaly detection can raise a disruption and start the agents automatically.',
     poweredBy: 'Tiger Data',
     detail: <RiskSparkline />,
@@ -132,17 +139,21 @@ export function PlatformSection() {
         />
 
         <div className="mt-14 grid gap-5 sm:grid-cols-2 xl:grid-cols-4 lg:mt-20">
-          {PILLARS.map((pillar, index) => {
-            const Icon = pillar.icon;
-            return (
-              <article key={pillar.name} className="flex flex-col rounded-[28px] border border-[#F5F1E8]/10 bg-[#0E1C2B] p-7 xl:p-6">
-                <div className="flex items-center justify-between">
-                  <span className="grid size-11 place-items-center rounded-full bg-[#F5F1E8]/8 text-[#8CC2F5]">
-                    <Icon aria-hidden="true" className="size-5" />
-                  </span>
-                  <span className="font-mono text-xs text-[#F5F1E8]/45">{String(index + 1).padStart(2, '0')}</span>
-                </div>
-                <p className={clsx(EYEBROW, 'mt-8 text-[#8CC2F5]')}>{pillar.kicker}</p>
+          {PILLARS.map((pillar) => (
+            <article key={pillar.name} className="flex flex-col overflow-hidden rounded-[28px] border border-[#F5F1E8]/10 bg-[#0E1C2B]">
+              {/* The photo fades into the card so the text below reads as part of the same surface. */}
+              <div className="relative aspect-[4/3] overflow-hidden">
+                <Image
+                  src={pillar.photo.src}
+                  alt={pillar.photo.alt}
+                  fill
+                  sizes="(min-width: 1280px) 320px, (min-width: 640px) 50vw, 100vw"
+                  className={clsx('object-cover', pillar.photo.className)}
+                />
+                <div aria-hidden="true" className="absolute inset-0 bg-linear-to-b from-[#0E1C2B]/0 from-55% to-[#0E1C2B]" />
+              </div>
+              <div className="flex flex-1 flex-col px-7 pb-7 xl:px-6 xl:pb-6">
+                <p className={clsx(EYEBROW, 'mt-2 text-[#8CC2F5]')}>{pillar.kicker}</p>
                 {/* Sized so the longest name stays on one line in the four-column layout. */}
                 <h3 className="mt-2 font-display text-[2.5rem] font-normal uppercase leading-none xl:text-[length:clamp(2rem,2.3vw,2.125rem)]">
                   {pillar.name}
@@ -153,9 +164,9 @@ export function PlatformSection() {
                   <span className="mr-1.5">Powered by</span>
                   <span className="font-semibold text-[#F5F1E8]/90">{pillar.poweredBy}</span>
                 </p>
-              </article>
-            );
-          })}
+              </div>
+            </article>
+          ))}
         </div>
 
         <div className="mt-5 flex flex-col gap-2 rounded-[22px] border border-[#F5F1E8]/10 px-6 py-5 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
