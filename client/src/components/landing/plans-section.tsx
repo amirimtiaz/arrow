@@ -1,5 +1,6 @@
 import clsx from 'clsx';
 import { ArrowRight, Check } from 'lucide-react';
+import type { CSSProperties } from 'react';
 import { PillLink } from './pill-link';
 import { SectionIntro } from './section-intro';
 import { CONTAINER, EYEBROW } from './styles';
@@ -64,14 +65,20 @@ const PLANS: Plan[] = [
   },
 ];
 
-function PlanCard({ plan }: { plan: Plan }) {
+/** From lg the plans climb like stairs, Main Street lowest and global highest. */
+const PLAN_STEP = ['lg:mt-28', 'lg:mt-14', ''] as const;
+
+function PlanCard({ plan, index }: { plan: Plan; index: number }) {
   const dark = plan.featured === true;
 
   return (
     <article
       aria-labelledby={`plan-${plan.tier.toLowerCase()}`}
+      data-reveal
+      style={{ '--reveal-delay': `${index * 140}ms` } as CSSProperties}
       className={clsx(
-        'flex flex-col rounded-[28px] p-8 lg:p-9',
+        PLAN_STEP[index],
+        'flex flex-col rounded-[28px] p-8 shadow-[0_34px_60px_-36px_rgba(11,23,36,0.5)] lg:p-9',
         dark ? 'bg-[#0B1724] text-[#F5F1E8] [--accent:#F5F1E8]' : 'bg-white text-[#0B1724] ring-1 ring-[#0B1724]/10'
       )}
     >
@@ -117,8 +124,9 @@ function PlanCard({ plan }: { plan: Plan }) {
 
 export function PlansSection() {
   return (
-    <section id="plans" aria-labelledby="plans-title" className="bg-[#F5F1E8] text-[#0B1724] [--accent:#1D5FBF]">
-      <div className={clsx(CONTAINER, 'py-24 lg:py-32')}>
+    <section data-scroll-scope id="plans" aria-labelledby="plans-title" className="relative bg-[#F5F1E8] text-[#0B1724] [--accent:#1D5FBF]">
+      {/* The previous section's cloud bank opens this one, so less top padding. */}
+      <div className={clsx(CONTAINER, 'pt-12 pb-24 lg:pt-16 lg:pb-32')}>
         <SectionIntro
           id="plans-title"
           tone="light"
@@ -133,9 +141,9 @@ export function PlansSection() {
           lede="The same platform scales from one kitchen's suppliers to a national pharmacy network to a global multimodal supply chain."
         />
 
-        <div className="mt-14 grid gap-5 lg:mt-20 lg:grid-cols-3">
-          {PLANS.map((plan) => (
-            <PlanCard key={plan.tier} plan={plan} />
+        <div className="mt-14 grid items-start gap-5 lg:mt-20 lg:grid-cols-3">
+          {PLANS.map((plan, index) => (
+            <PlanCard key={plan.tier} plan={plan} index={index} />
           ))}
         </div>
 

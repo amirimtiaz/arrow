@@ -2,6 +2,7 @@ import clsx from 'clsx';
 import { ArrowUpRight } from 'lucide-react';
 import Link from 'next/link';
 import { ArrowWordmark } from './arrow-mark';
+import { SkyCloud } from './clouds';
 import { PillLink } from './pill-link';
 import { SECTION_LINKS } from './site-header';
 import { SkyPhoto } from './sky-photo';
@@ -106,8 +107,21 @@ function SiteFooter() {
 /** Closing call to action and site footer, set over the same sky photo as the hero (mirrored for variety). */
 export function Closing() {
   return (
-    <div className="relative isolate flex min-h-[100svh] flex-col justify-between overflow-hidden bg-[#4F7F99] text-[#F5F1E8] md:min-h-[max(100svh,72vw)]">
+    <div
+      data-scroll-scope
+      className="relative isolate flex min-h-[100svh] flex-col justify-between overflow-hidden bg-[#4F7F99] text-[#F5F1E8] md:min-h-[max(100svh,72vw)]"
+    >
       <SkyPhoto alt="" positionClassName="object-[60%_0%] md:object-[50%_0%]" scrim={CLOSING_SCRIM} mirrored />
+      {/* Night-navy from the section above dissolves into the sky, and clouds drift out of it as you arrive. */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 top-0 z-[-6] h-[30vw] max-h-[420px] bg-linear-to-b from-[#08131F] via-[#08131F]/55 to-transparent"
+      />
+      <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-[-5] hidden md:block">
+        <SkyCloud className="top-[9%] left-[4%] w-[min(24vw,380px)]" px={140} py={60} drift={32} />
+        <SkyCloud className="top-[4%] right-[10%] w-[min(17vw,270px)] opacity-85" shape={1} px={-110} py={40} drift={27} flip />
+        <SkyCloud className="top-[24%] right-[-3%] w-[min(21vw,330px)] opacity-75" px={-60} py={90} drift={38} />
+      </div>
       <ClosingCallToAction />
       <SiteFooter />
     </div>

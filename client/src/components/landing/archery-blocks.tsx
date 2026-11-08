@@ -1,5 +1,6 @@
 'use client';
 
+import clsx from 'clsx';
 import { Handshake, Scale, Siren, Truck, type LucideIcon } from 'lucide-react';
 import { useEffect, useRef, type CSSProperties } from 'react';
 
@@ -10,6 +11,9 @@ const R = 44;
 
 /** Face colours from the outside in, two scoring rings per colour like a real archery face. */
 const BANDS = ['#FFFFFF', '#0B1724', '#1D5FBF', '#D8483B', '#F2B33D'] as const;
+
+/** From md the blocks sit at casual angles and heights, as if dragged into place; hovering squares one up. */
+const POSES = ['md:-rotate-2', 'md:mt-10 md:rotate-[1.5deg]', 'md:mt-3 md:-rotate-1', 'md:mt-14 md:rotate-[2.5deg]'] as const;
 
 interface Silo {
   icon: LucideIcon;
@@ -62,13 +66,16 @@ export function ArcheryBlocks() {
     <ul
       ref={listRef}
       aria-label="Systems teams switch between today"
-      className="mt-14 grid grid-cols-2 gap-x-5 gap-y-6 md:grid-cols-4 lg:mt-16 lg:gap-x-7"
+      className="mt-14 grid grid-cols-2 items-start gap-x-5 gap-y-6 md:grid-cols-4 lg:mt-16 lg:gap-x-7"
     >
       {SILOS.map((silo, i) => (
         <li
           key={silo.label}
           style={{ '--i': i } as CSSProperties}
-          className="relative flex flex-col items-center rounded-[22px] bg-[#FFFDF8] px-4 pt-6 pb-6 shadow-[7px_8px_0_#DCD2C0,0_22px_36px_-20px_rgba(11,23,36,0.38)] ring-1 ring-[#0B1724]/10 lg:px-6"
+          className={clsx(
+            POSES[i],
+            'relative flex flex-col items-center rounded-[22px] bg-[#FFFDF8] px-4 pt-6 pb-6 shadow-[7px_8px_0_#DCD2C0,0_22px_36px_-20px_rgba(11,23,36,0.38)] ring-1 ring-[#0B1724]/10 transition-[rotate] duration-300 hover:rotate-0 lg:px-6'
+          )}
         >
           <silo.icon aria-hidden="true" strokeWidth={1.75} className="absolute top-4 left-4 size-8 text-[#0B1724]/75 lg:size-9" />
           <Target silo={silo} />

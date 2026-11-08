@@ -163,6 +163,84 @@ body {
 }
 
 /*
+ * Landing scroll motion (components/landing/scroll-effects.tsx and clouds.tsx). scroll-effects sets --p on each
+ * [data-scroll-scope] section; a .parallax child moves --p times its own --px / --py. Clouds also drift idly.
+ * Reveals use the individual translate/scale properties so they compose with transforms and rotations.
+ */
+.parallax {
+  transform: translate3d(calc(var(--p, 0) * var(--px, 0px)), calc(var(--p, 0) * var(--py, 0px)), 0);
+  will-change: transform;
+}
+
+@keyframes cloud-drift {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  50% {
+    translate: var(--drift-x, 28px) -5px;
+  }
+}
+
+.cloud-drift {
+  animation: cloud-drift var(--drift-s, 28s) ease-in-out infinite;
+}
+
+/* Hero lines rise in one after another on load (--d staggers them). */
+@keyframes hero-rise {
+  from {
+    opacity: 0;
+    translate: 0 30px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+.hero-rise {
+  animation: hero-rise 1000ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: var(--d, 0ms);
+}
+
+html[data-motion='on'] [data-reveal] {
+  transition:
+    opacity 700ms ease-out,
+    translate 950ms cubic-bezier(0.2, 0.7, 0.2, 1),
+    scale 950ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  transition-delay: var(--reveal-delay, 0ms);
+}
+
+html[data-motion='on'] [data-reveal]:not([data-revealed]) {
+  opacity: 0;
+  translate: 0 44px;
+}
+
+html[data-motion='on'] [data-reveal='left']:not([data-revealed]) {
+  translate: -64px 0;
+}
+
+html[data-motion='on'] [data-reveal='right']:not([data-revealed]) {
+  translate: 64px 0;
+}
+
+html[data-motion='on'] [data-reveal='zoom']:not([data-revealed]) {
+  translate: 0 28px;
+  scale: 0.92;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .parallax {
+    transform: none;
+  }
+
+  .cloud-drift,
+  .hero-rise {
+    animation: none;
+  }
+}
+
+/*
  * Landing "problem" archery blocks (components/landing/archery-blocks.tsx). The script arms the row while it is
  * below the fold, then sets data-archery="hit" when it scrolls in: arrows fly in one by one (--i staggers them) and
  * a puff of splinters marks where each one misses.

@@ -1,5 +1,7 @@
 import clsx from 'clsx';
 import { ArrowRight, KeyRound, Link2, Server, ShieldCheck } from 'lucide-react';
+import type { CSSProperties } from 'react';
+import { BANK_HEIGHT, CloudBank } from './clouds';
 import { PillLink } from './pill-link';
 import { SectionIntro } from './section-intro';
 import { CONTAINER } from './styles';
@@ -13,8 +15,12 @@ const SAFEGUARDS = [
 
 export function SecuritySection() {
   return (
-    <section id="security" aria-labelledby="security-title" className="bg-[#08131F] text-[#F5F1E8]">
-      <div className={clsx(CONTAINER, 'grid gap-14 py-24 lg:grid-cols-12 lg:gap-16 lg:py-32')}>
+    <section data-scroll-scope id="security" aria-labelledby="security-title" className="relative bg-[#08131F] text-[#F5F1E8]">
+      <CloudBank edge="top" seed={53} over="navy" />
+      <div
+        className={clsx(CONTAINER, 'grid gap-14 pb-24 lg:grid-cols-12 lg:gap-16 lg:pb-32')}
+        style={{ paddingTop: `calc(${BANK_HEIGHT} + 3.5rem)` }}
+      >
         <div className="lg:col-span-6">
           <SectionIntro
             id="security-title"
@@ -28,7 +34,7 @@ export function SecuritySection() {
               </>
             }
           />
-          <p className="mt-6 max-w-xl text-lg/8 text-[#F5F1E8]/72">
+          <p data-reveal className="mt-6 max-w-xl text-lg/8 text-[#F5F1E8]/72">
             The Cyber Control Tower is an isolated command center for responders. It runs on its own SpacetimeDB database, separate from
             operations. People join only with a one-time invite code that an admin shares in person, every action is checked against the
             member’s role on the server, and every change is appended to a hash-chained audit log the team can verify from the dashboard.
@@ -43,8 +49,13 @@ export function SecuritySection() {
 
         <div className="lg:col-span-6 lg:pt-10">
           <ul className="divide-y divide-[#F5F1E8]/10 border-y border-[#F5F1E8]/10">
-            {SAFEGUARDS.map(({ icon: Icon, label, note }) => (
-              <li key={label} className="flex items-start gap-5 py-6">
+            {SAFEGUARDS.map(({ icon: Icon, label, note }, i) => (
+              <li
+                key={label}
+                data-reveal="right"
+                style={{ '--reveal-delay': `${i * 120}ms` } as CSSProperties}
+                className="flex items-start gap-5 py-6"
+              >
                 <span className="grid size-11 shrink-0 place-items-center rounded-full bg-[#F5F1E8]/8 text-[#8CC2F5]">
                   <Icon aria-hidden="true" className="size-5" />
                 </span>

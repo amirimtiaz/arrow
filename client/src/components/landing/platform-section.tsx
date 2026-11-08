@@ -1,6 +1,7 @@
 import clsx from 'clsx';
 import Image from 'next/image';
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
+import { BANK_HEIGHT, CloudBank } from './clouds';
 import { SectionIntro } from './section-intro';
 import { CONTAINER, EYEBROW } from './styles';
 
@@ -86,6 +87,9 @@ interface Pillar {
   detail: ReactNode;
 }
 
+/** From xl the four cards step down and back up like a wave instead of one flat row. */
+const PILLAR_OFFSET = ['', 'xl:mt-16', 'xl:mt-6', 'xl:mt-24'] as const;
+
 const PILLARS: Pillar[] = [
   {
     name: 'Silk Road',
@@ -128,8 +132,10 @@ const PILLARS: Pillar[] = [
 
 export function PlatformSection() {
   return (
-    <section id="platform" aria-labelledby="platform-title" className="bg-[#08131F] text-[#F5F1E8]">
-      <div className={clsx(CONTAINER, 'py-24 lg:py-32')}>
+    <section data-scroll-scope id="platform" aria-labelledby="platform-title" className="relative bg-[#08131F] text-[#F5F1E8]">
+      {/* The cream section above trails down into this one as a hanging cloud bank. */}
+      <CloudBank edge="top" seed={23} over="navy" />
+      <div className={clsx(CONTAINER, 'pb-24 lg:pb-32')} style={{ paddingTop: `calc(${BANK_HEIGHT} + 3.5rem)` }}>
         <SectionIntro
           id="platform-title"
           tone="dark"
@@ -138,38 +144,50 @@ export function PlatformSection() {
           lede="Arrow connects live operations, disruption intelligence and cyber incident response in one interface. Agents do the digging; people make the call."
         />
 
-        <div className="mt-14 grid gap-5 sm:grid-cols-2 xl:grid-cols-4 lg:mt-20">
-          {PILLARS.map((pillar) => (
-            <article key={pillar.name} className="flex flex-col overflow-hidden rounded-[28px] border border-[#F5F1E8]/10 bg-[#0E1C2B]">
-              {/* The photo fades into the card so the text below reads as part of the same surface. */}
-              <div className="relative aspect-[4/3] overflow-hidden">
-                <Image
-                  src={pillar.photo.src}
-                  alt={pillar.photo.alt}
-                  fill
-                  sizes="(min-width: 1280px) 320px, (min-width: 640px) 50vw, 100vw"
-                  className={clsx('object-cover', pillar.photo.className)}
-                />
-                <div aria-hidden="true" className="absolute inset-0 bg-linear-to-b from-[#0E1C2B]/0 from-55% to-[#0E1C2B]" />
-              </div>
-              <div className="flex flex-1 flex-col px-7 pb-7 xl:px-6 xl:pb-6">
-                <p className={clsx(EYEBROW, 'mt-2 text-[#8CC2F5]')}>{pillar.kicker}</p>
-                {/* Sized so the longest name stays on one line in the four-column layout. */}
-                <h3 className="mt-2 font-display text-[2.5rem] font-normal uppercase leading-none xl:text-[length:clamp(2rem,2.3vw,2.125rem)]">
-                  {pillar.name}
-                </h3>
-                <p className="mt-4 text-[15px]/7 text-[#F5F1E8]/72">{pillar.body}</p>
-                <div className="mt-6 pb-7">{pillar.detail}</div>
-                <p className="mt-auto border-t border-[#F5F1E8]/10 pt-5 text-xs text-[#F5F1E8]/55">
-                  <span className="mr-1.5">Powered by</span>
-                  <span className="font-semibold text-[#F5F1E8]/90">{pillar.poweredBy}</span>
-                </p>
-              </div>
-            </article>
+        <div className="mt-14 grid items-start gap-5 sm:grid-cols-2 xl:grid-cols-4 lg:mt-20">
+          {PILLARS.map((pillar, i) => (
+            <div
+              key={pillar.name}
+              data-reveal
+              style={{ '--reveal-delay': `${i * 120}ms` } as CSSProperties}
+              className={clsx('h-full xl:h-auto', PILLAR_OFFSET[i])}
+            >
+              <article className="group flex h-full flex-col overflow-hidden rounded-[28px] border border-[#F5F1E8]/10 bg-[#0E1C2B] transition-[translate,border-color] duration-300 hover:-translate-y-1.5 hover:border-[#8CC2F5]/40">
+                {/* The photo fades into the card so the text below reads as part of the same surface. */}
+                <div className="relative aspect-[4/3] overflow-hidden">
+                  <div className="absolute inset-0 transition-[scale] duration-700 ease-out group-hover:scale-[1.06]">
+                    <Image
+                      src={pillar.photo.src}
+                      alt={pillar.photo.alt}
+                      fill
+                      sizes="(min-width: 1280px) 320px, (min-width: 640px) 50vw, 100vw"
+                      className={clsx('object-cover', pillar.photo.className)}
+                    />
+                  </div>
+                  <div aria-hidden="true" className="absolute inset-0 bg-linear-to-b from-[#0E1C2B]/0 from-55% to-[#0E1C2B]" />
+                </div>
+                <div className="flex flex-1 flex-col px-7 pb-7 xl:px-6 xl:pb-6">
+                  <p className={clsx(EYEBROW, 'mt-2 text-[#8CC2F5]')}>{pillar.kicker}</p>
+                  {/* Sized so the longest name stays on one line in the four-column layout. */}
+                  <h3 className="mt-2 font-display text-[2.5rem] font-normal uppercase leading-none xl:text-[length:clamp(2rem,2.3vw,2.125rem)]">
+                    {pillar.name}
+                  </h3>
+                  <p className="mt-4 text-[15px]/7 text-[#F5F1E8]/72">{pillar.body}</p>
+                  <div className="mt-6 pb-7">{pillar.detail}</div>
+                  <p className="mt-auto border-t border-[#F5F1E8]/10 pt-5 text-xs text-[#F5F1E8]/55">
+                    <span className="mr-1.5">Powered by</span>
+                    <span className="font-semibold text-[#F5F1E8]/90">{pillar.poweredBy}</span>
+                  </p>
+                </div>
+              </article>
+            </div>
           ))}
         </div>
 
-        <div className="mt-5 flex flex-col gap-2 rounded-[22px] border border-[#F5F1E8]/10 px-6 py-5 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+        <div
+          data-reveal
+          className="mt-5 flex flex-col gap-2 rounded-[22px] border border-[#F5F1E8]/10 px-6 py-5 sm:flex-row sm:items-center sm:justify-between sm:gap-6"
+        >
           <p className="flex items-center gap-3 text-[15px] font-semibold">
             <span aria-hidden="true" className="animate-soft-pulse size-2.5 shrink-0 rounded-full bg-[#22C55E]" />
             Real-time sync powered by SpacetimeDB

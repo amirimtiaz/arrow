@@ -31,9 +31,15 @@ export function SiteHeader() {
           />
         </Link>
 
-        <PillLink href="/app" variant="cream-outline" size="sm" arrowShot={{ direction: 'forward', caption: 'Launching command center' }}>
+        <PillLink
+          href="/app"
+          variant="cream-outline"
+          size="md"
+          className="backdrop-blur-[2px] lg:h-[3.25rem] lg:px-7 lg:text-base"
+          arrowShot={{ direction: 'forward', caption: 'Launching command center' }}
+        >
           Launch app
-          <HalfArrow className="size-4" />
+          <HalfArrow className="size-[1.125rem]" />
         </PillLink>
       </nav>
     </header>

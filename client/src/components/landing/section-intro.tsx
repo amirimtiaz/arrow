@@ -17,7 +17,7 @@ export function SectionIntro({ id, eyebrow, title, lede, tone, className }: Sect
   const light = tone === 'light';
 
   return (
-    <div className={clsx('max-w-3xl', className)}>
+    <div data-reveal className={clsx('max-w-3xl', className)}>
       <p className={clsx(EYEBROW, light ? 'text-[#1D5FBF]' : 'text-[#8CC2F5]')}>{eyebrow}</p>
       <h2 id={id} className={clsx(DISPLAY, SECTION_TITLE, 'mt-5')}>
         {title}

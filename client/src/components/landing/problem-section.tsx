@@ -1,5 +1,6 @@
 import clsx from 'clsx';
 import Image from 'next/image';
+import type { CSSProperties } from 'react';
 import { ArcheryBlocks } from './archery-blocks';
 import { ArrowMark } from './arrow-mark';
 import { SectionIntro } from './section-intro';
@@ -16,6 +17,12 @@ interface CaseStudy {
   impact: { value: string; label: string }[];
   sources: { label: string; href: string }[];
 }
+
+/** Each case study sits at its own slight angle and height (from md) and straightens when hovered. */
+const CARD_POSE = [
+  'transition-[rotate] duration-500 md:-rotate-1 md:hover:rotate-0',
+  'transition-[rotate] duration-500 md:mt-24 md:rotate-[0.8deg] md:hover:rotate-0',
+] as const;
 
 /** Real events told as case studies only: what happened and what it cost. No Arrow pitch inside these cards. */
 const WAKE_UP_CALLS: CaseStudy[] = [
@@ -78,8 +85,9 @@ const WAKE_UP_CALLS: CaseStudy[] = [
 
 export function ProblemSection() {
   return (
-    <section aria-labelledby="problem-title" className="bg-[#F5F1E8] text-[#0B1724] [--accent:#1D5FBF]">
-      <div className={clsx(CONTAINER, 'py-24 lg:py-32')}>
+    <section data-scroll-scope aria-labelledby="problem-title" className="relative bg-[#F5F1E8] text-[#0B1724] [--accent:#1D5FBF]">
+      {/* The hero's cloud bank already opens this section, so less top padding; the bottom clears the next bank. */}
+      <div className={clsx(CONTAINER, 'pt-12 pb-24 lg:pt-16 lg:pb-32')}>
         <div className="grid gap-12 lg:grid-cols-12 lg:gap-16">
           <SectionIntro
             id="problem-title"
@@ -95,7 +103,7 @@ export function ProblemSection() {
             className="lg:col-span-6"
           />
 
-          <div className="lg:col-span-6 lg:pt-12">
+          <div data-reveal="right" className="lg:col-span-6 lg:pt-12">
             <p className="text-lg/8 text-[#0B1724]/80">
               Supply chains power the global economy. Yet critical decisions depend on separate systems for tracking shipments, managing
               vendors, responding to cyber incidents and evaluating risk. When something breaks, teams lose precious time stitching the
@@ -106,14 +114,16 @@ export function ProblemSection() {
 
         <ArcheryBlocks />
 
-        <p className="mt-10 flex items-center gap-3 text-base font-semibold lg:text-lg">
+        <p data-reveal="left" className="mt-10 flex items-center gap-3 text-base font-semibold lg:text-lg">
           <ArrowMark className="h-3.5 w-auto shrink-0 text-[#1D5FBF]" />
           Arrow brings them into one live command center.
         </p>
 
-        <div className="mt-20 grid gap-5 md:grid-cols-2 lg:mt-24">
-          {WAKE_UP_CALLS.map((event) => (
-            <CaseStudyCard key={event.year} event={event} />
+        <div className="mt-20 grid items-start gap-8 md:grid-cols-2 md:gap-6 lg:mt-24">
+          {WAKE_UP_CALLS.map((event, i) => (
+            <div key={event.year} data-reveal="zoom" style={{ '--reveal-delay': `${i * 160}ms` } as CSSProperties} className={CARD_POSE[i]}>
+              <CaseStudyCard event={event} />
+            </div>
           ))}
         </div>
       </div>
@@ -123,14 +133,14 @@ export function ProblemSection() {
 
 function CaseStudyCard({ event }: { event: CaseStudy }) {
   return (
-    <article className="flex flex-col overflow-hidden rounded-[28px] bg-white ring-1 ring-[#0B1724]/10">
-      <figure className="relative aspect-[16/9] bg-[#DCD2C0]">
+    <article className="group flex flex-col overflow-hidden rounded-[28px] bg-white shadow-[0_30px_60px_-34px_rgba(11,23,36,0.45)] ring-1 ring-[#0B1724]/10">
+      <figure className="relative aspect-[16/9] overflow-hidden bg-[#DCD2C0]">
         <Image
           src={event.photo.src}
           alt={event.photo.alt}
           fill
           sizes="(min-width: 1360px) 660px, (min-width: 768px) 50vw, 100vw"
-          className="object-cover"
+          className="object-cover transition-[scale] duration-700 ease-out group-hover:scale-[1.04]"
         />
         <figcaption className="absolute inset-x-0 bottom-0 bg-linear-to-t from-[#04101C]/70 to-transparent px-4 pt-8 pb-2 text-right text-[11px] text-white/85">
           {event.photo.credit}

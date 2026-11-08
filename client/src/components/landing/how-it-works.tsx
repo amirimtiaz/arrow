@@ -1,6 +1,11 @@
 import clsx from 'clsx';
+import type { CSSProperties } from 'react';
+import { BANK_HEIGHT, CloudBank } from './clouds';
 import { SectionIntro } from './section-intro';
 import { CONTAINER } from './styles';
+
+/** From xl the steps descend like a staircase, one tread per stage. */
+const STEP_DROP = ['', 'xl:mt-14', 'xl:mt-28', 'xl:mt-42'] as const;
 
 const STEPS = [
   {
@@ -23,15 +28,20 @@ const STEPS = [
 
 export function HowItWorks() {
   return (
-    <section aria-labelledby="how-title" className="border-t border-[#F5F1E8]/10 bg-[#08131F] text-[#F5F1E8]">
-      <div className={clsx(CONTAINER, 'py-24 lg:py-32')}>
+    <section data-scroll-scope aria-labelledby="how-title" className="relative border-t border-[#F5F1E8]/10 bg-[#08131F] text-[#F5F1E8]">
+      <div className={clsx(CONTAINER, 'pt-24 lg:pt-32')} style={{ paddingBottom: `calc(${BANK_HEIGHT} + 4rem)` }}>
         <SectionIntro id="how-title" tone="dark" eyebrow="How it works" title="From alert to action." />
 
-        <ol className="mt-14 grid gap-12 md:grid-cols-2 md:gap-x-8 xl:grid-cols-4 lg:mt-20">
+        <ol className="mt-14 grid items-start gap-12 md:grid-cols-2 md:gap-x-8 xl:grid-cols-4 lg:mt-20">
           {STEPS.map((step, index) => {
             const last = index === STEPS.length - 1;
             return (
-              <li key={step.name} className="relative border-t border-[#F5F1E8]/20 pt-9">
+              <li
+                key={step.name}
+                data-reveal="left"
+                style={{ '--reveal-delay': `${index * 150}ms` } as CSSProperties}
+                className={clsx('relative border-t border-[#F5F1E8]/20 pt-9', STEP_DROP[index])}
+              >
                 <span
                   aria-hidden="true"
                   className={clsx(
@@ -49,6 +59,8 @@ export function HowItWorks() {
           })}
         </ol>
       </div>
+      {/* Clouds rise from the bottom into the cream Plans section. */}
+      <CloudBank edge="bottom" seed={37} over="navy" />
     </section>
   );
 }
