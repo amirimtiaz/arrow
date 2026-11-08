@@ -1,0 +1,19 @@
+# Dependencies & builds
+node_modules/
+.next/
+out/
+dist/
+*.tsbuildinfo
+next-env.d.ts
+
+# Secrets & local identities (never commit)
+.env
+.env.*
+!.env.example
+worker/.agent-token
+*.token
+
+# Local tooling
+.claude/settings.local.json
+npm-debug.log*
+.DS_Store

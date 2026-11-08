@@ -1,0 +1,28 @@
+{
+  "name": "arrow-worker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Thin worker: Nemotron agents, Tiger Data bridge and analytics API. Changes state only through arrow-ops reducers.",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts",
+    "identity": "tsx src/print-identity.ts",
+    "tiger:setup": "tsx src/tiger/setup.ts",
+    "typecheck": "tsc --noEmit",
+    "test:agent": "tsx test/agent-e2e.ts"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "openai": "^5.0.0",
+    "pg": "^8.13.0",
+    "spacetimedb": "2.14.*",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/pg": "^8.11.0",
+    "tsx": "^4.20.0",
+    "typescript": "~5.8.0"
+  }
+}

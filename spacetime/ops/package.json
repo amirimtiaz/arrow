@@ -1,0 +1,19 @@
+{
+  "name": "arrow-ops",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Arrow operations module: supply-chain state, simulation tick, scoring, approvals, agent logs and feed.",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "tsx test/scoring.test.ts"
+  },
+  "dependencies": {
+    "spacetimedb": "2.14.*"
+  },
+  "devDependencies": {
+    "typescript": "~5.6.2",
+    "tsx": "^4.20.0",
+    "@types/node": "^22.0.0"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "arrow-client",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "C:/Users/redne/Downloads/arrow/client", "run", "dev"],
+      "port": 3100
+    }
+  ]
+}

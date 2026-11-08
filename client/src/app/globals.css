@@ -1,0 +1,194 @@
+@import 'tailwindcss';
+
+/*
+ * Arrow design tokens. Dark is the default command-center theme; light mirrors
+ * the airy "sky" look. Components use the semantic Tailwind colors below
+ * (bg-panel, text-muted, border-line, …) so both themes stay in sync.
+ */
+:root,
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #0d121b;
+  --bg-elevated: #121925;
+  --panel: #141b27;
+  --panel-2: #192232;
+  --panel-hover: #1e2939;
+  --line: #243044;
+  --line-strong: #31405a;
+  --text: #e7edf6;
+  --muted: #94a3b8;
+  --faint: #64748b;
+  --accent: #3b8bff;
+  --accent-strong: #2f7af0;
+  --accent-soft: rgba(59, 139, 255, 0.14);
+  --success: #22c55e;
+  --success-soft: rgba(34, 197, 94, 0.14);
+  --warning: #f5a524;
+  --warning-soft: rgba(245, 165, 36, 0.14);
+  --danger: #f2555a;
+  --danger-soft: rgba(242, 85, 90, 0.15);
+  --cyan: #22d3ee;
+  --cyan-soft: rgba(34, 211, 238, 0.14);
+  --violet: #a78bfa;
+  --violet-soft: rgba(167, 139, 250, 0.15);
+  --shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+  --globe-ocean: #0e1520;
+  --globe-land: #1c2533;
+  --globe-border: #2b3747;
+  --globe-atmosphere: #3b6fb6;
+  --chart-grid: #223047;
+  --map-bg: radial-gradient(circle at 50% 42%, #16243b 0%, #0f1828 38%, #0d121b 72%);
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #e8f1fc;
+  --bg-elevated: #f4f8fe;
+  --panel: #ffffff;
+  --panel-2: #f3f7fc;
+  --panel-hover: #eaf1fb;
+  --line: #dde7f3;
+  --line-strong: #c6d5e8;
+  --text: #0f1b2d;
+  --muted: #55657a;
+  --faint: #8494a8;
+  --accent: #1677ff;
+  --accent-strong: #0f63de;
+  --accent-soft: rgba(22, 119, 255, 0.1);
+  --success: #16a34a;
+  --success-soft: rgba(22, 163, 74, 0.12);
+  --warning: #d97706;
+  --warning-soft: rgba(217, 119, 6, 0.12);
+  --danger: #dc2626;
+  --danger-soft: rgba(220, 38, 38, 0.1);
+  --cyan: #0891b2;
+  --cyan-soft: rgba(8, 145, 178, 0.12);
+  --violet: #7c3aed;
+  --violet-soft: rgba(124, 58, 237, 0.1);
+  --shadow: 0 8px 30px rgba(30, 64, 120, 0.1);
+  --globe-ocean: #cfe3f8;
+  --globe-land: #ffffff;
+  --globe-border: #b9cde4;
+  --globe-atmosphere: #8fc1f5;
+  --chart-grid: #e3ebf5;
+  --map-bg: radial-gradient(circle at 50% 42%, #ffffff 0%, #eef5fd 40%, #dbe8f7 78%);
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-elevated: var(--bg-elevated);
+  --color-panel: var(--panel);
+  --color-panel-2: var(--panel-2);
+  --color-panel-hover: var(--panel-hover);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-fg: var(--text);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-soft: var(--accent-soft);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-cyan: var(--cyan);
+  --color-cyan-soft: var(--cyan-soft);
+  --color-violet: var(--violet);
+  --color-violet-soft: var(--violet-soft);
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-anton), 'Arial Narrow', sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, monospace;
+  --shadow-panel: var(--shadow);
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Thin, theme-aware scrollbars for dense panels. */
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+
+@keyframes arrow-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.animate-soft-pulse {
+  animation: arrow-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes arrow-ping {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+
+.disruption-marker {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 9999px;
+  background: var(--danger);
+  color: #fff;
+  font-weight: 800;
+  font-size: 15px;
+  box-shadow: 0 0 0 3px rgba(242, 85, 90, 0.35);
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.disruption-marker::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  border: 2px solid var(--danger);
+  animation: arrow-ping 1.6s ease-out infinite;
+}
+
+.disruption-marker[data-mitigating='true'] {
+  background: var(--warning);
+  box-shadow: 0 0 0 3px rgba(245, 165, 36, 0.35);
+}
+
+.disruption-marker[data-mitigating='true']::after {
+  border-color: var(--warning);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-soft-pulse,
+  .disruption-marker::after {
+    animation: none;
+  }
+}

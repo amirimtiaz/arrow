@@ -1,0 +1,16 @@
+{
+  "name": "arrow",
+  "private": true,
+  "description": "Arrow: centralized, digitized and agentic supply chain intelligence (HackUTD 2026).",
+  "scripts": {
+    "install:all": "npm --prefix client install && npm --prefix worker install && npm --prefix spacetime/ops install && npm --prefix spacetime/ir install",
+    "setup": "node scripts/setup.mjs",
+    "setup:reset": "node scripts/setup.mjs --reset",
+    "ir:bootstrap": "node scripts/ir-bootstrap.mjs",
+    "ir:smoke": "npm --prefix spacetime/ir run smoke",
+    "dev:client": "npm --prefix client run dev",
+    "dev:worker": "npm --prefix worker start",
+    "test": "npm --prefix spacetime/ops test && npm --prefix worker run test:agent",
+    "typecheck": "npm --prefix spacetime/ops run typecheck && npm --prefix worker run typecheck && npm --prefix client run typecheck"
+  }
+}
