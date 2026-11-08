@@ -443,3 +443,33 @@ html[data-motion='on'] [data-reveal='zoom']:not([data-revealed]) {
     animation: none;
   }
 }
+
+/* Hub hover card on the Silk Road: a still made to read as a live camera (slow pan, scanlines, blinking REC dot). */
+@keyframes cam-pan {
+  from {
+    transform: scale(1.06) translate(0, 0);
+  }
+  to {
+    transform: scale(1.16) translate(-3%, -2%);
+  }
+}
+.live-cam-img {
+  animation: cam-pan 12s ease-in-out infinite alternate;
+}
+.live-cam-scan {
+  background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.16) 0 1px, transparent 1px 3px);
+}
+@keyframes rec-blink {
+  50% {
+    opacity: 0.2;
+  }
+}
+.rec-dot {
+  animation: rec-blink 1.2s steps(1) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .live-cam-img,
+  .rec-dot {
+    animation: none;
+  }
+}

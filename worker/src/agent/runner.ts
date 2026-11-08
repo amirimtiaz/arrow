@@ -19,7 +19,19 @@ import type { ActionProposal, AgentRun, Disruption } from '../module_bindings/ty
 import { waitFor, type Ops } from '../spacetime';
 import type { HistoryProvider } from '../tiger/history';
 import { chat, type Message, type ToolSpec } from './llm';
-import { analystPrompt, askPrompt, auditorPrompt, cyberPrompt, monitorPrompt, plannerPrompt, revisionPrompt } from './prompts';
+import {
+  analystPrompt,
+  askPrompt,
+  auditorPrompt,
+  CHAT_PERSONAS,
+  cyberPrompt,
+  dealPrompt,
+  monitorPrompt,
+  personaPrompt,
+  plannerPrompt,
+  revisionPrompt,
+  type ChatPersonaKey,
+} from './prompts';
 import {
   ANALYST_TOOLS,
   ASK_TOOLS,
@@ -365,6 +377,13 @@ export async function handleAsk(ops: Ops, queued: AgentRun, history: HistoryProv
   const ctx: ToolContext = { ops, runId: queued.id, orgId: queued.orgId, disruptionId: 0n, history, notes: {} };
   console.log(`[agent] ask #${queued.id}: ${queued.prompt.slice(0, 80)}`);
 
+  // "[[agents:analyst,auditor]] question": direct chat with named agents, or "[[agents:deal]] {...}" for Conquest GIS.
+  const routed = queued.prompt.match(/^\[\[agents:([a-z,]+)\]\]\s*([\s\S]*)$/);
+  if (routed) {
+    await handleAgentChat(ops, queued, ctx, log, routed[1].split(','), routed[2].trim());
+    return;
+  }
+
   try {
     if (!llmConfigured) throw new Error(notConfigured);
     const org = orgInfo(ops, queued.orgId);
@@ -381,6 +400,54 @@ export async function handleAsk(ops: Ops, queued: AgentRun, history: HistoryProv
       status: 'completed',
       summary: truncate(answer.split('\n')[0], 200),
       answer,
+      error: '',
+    });
+  } catch (err) {
+    await failRun(ops, queued, log, err);
+  }
+}
+
+/**
+ * Direct agent chat: each named agent answers in turn (in pipeline order) over the same read-only tools, and each
+ * reply is logged as its own `message` step so the UI shows one bubble per agent as soon as it is ready.
+ */
+async function handleAgentChat(ops: Ops, queued: AgentRun, ctx: ToolContext, log: Logger, keys: string[], question: string) {
+  try {
+    if (!llmConfigured) throw new Error(notConfigured);
+    if (!question) throw new Error('The question is empty.');
+    const org = orgInfo(ops, queued.orgId);
+    const answers: string[] = [];
+
+    if (keys.includes('deal')) {
+      const result = await runAgent({ name: 'Deal Evaluator', system: dealPrompt(org), tools: [], maxTurns: 1 }, question, ctx, log);
+      const text = result.finalText || 'No evaluation was returned. Try again.';
+      await log('message', { agent: 'Deal Evaluator', title: 'Answer', output: { text } });
+      answers.push(text);
+    } else {
+      const order = Object.keys(CHAT_PERSONAS) as ChatPersonaKey[];
+      const chosen = order.filter((k) => keys.includes(k));
+      if (chosen.length === 0) throw new Error('No known agents were selected.');
+      for (const key of chosen) {
+        const persona = CHAT_PERSONAS[key];
+        const others = chosen.filter((k) => k !== key).map((k) => CHAT_PERSONAS[k].name);
+        const result = await runAgent(
+          { name: persona.name, system: personaPrompt(org, key, others), tools: ASK_TOOLS.filter((t) => t.name !== 'post_briefing'), maxTurns: 4 },
+          question,
+          ctx,
+          log
+        );
+        const text = result.finalText || 'I could not finish within my step limit. Try a narrower question.';
+        await log('message', { agent: persona.name, title: 'Answer', output: { text } });
+        answers.push(`**${persona.name}:** ${text}`);
+      }
+    }
+
+    const answer = answers.join('\n\n');
+    await ops.reducers.finishAgentRun({
+      runId: queued.id,
+      status: 'completed',
+      summary: truncate(answer.split('\n')[0], 200),
+      answer: truncate(answer, 3900),
       error: '',
     });
   } catch (err) {

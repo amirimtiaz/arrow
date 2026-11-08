@@ -28,7 +28,8 @@ const SUGGESTIONS: Record<string, string[]> = {
 
 export function AskArrow() {
   const { askOpen, setAskOpen } = useSilkRoad();
-  const runs = useAskRuns();
+  // Direct agent chat and Conquest GIS deal memos ("[[agents:…]]") have their own UIs.
+  const runs = useAskRuns().filter((r) => !r.prompt.startsWith('[[agents:'));
   const org = useCurrentOrg();
   const profile = useMyProfile();
   const service = useAgentService();

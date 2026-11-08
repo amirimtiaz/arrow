@@ -6,9 +6,9 @@ import {
   Bot,
   Check,
   ChevronDown,
-  FlaskConical,
   Globe2,
   LineChart,
+  MapPinned,
   Moon,
   ShieldCheck,
   Sun,
@@ -35,6 +35,7 @@ const NAV: { href: string; label: string; icon: LucideIcon }[] = [
   { href: '/app/analytics', label: 'Analytics', icon: LineChart },
   { href: '/app/agents', label: 'Current AI Agents', icon: Bot },
   { href: '/app/feed', label: 'Live Feed', icon: Antenna },
+  { href: '/app/conquest', label: 'Conquest GIS', icon: MapPinned },
   { href: '/app/control-tower', label: 'Control Tower', icon: ShieldCheck },
 ];
 
@@ -86,13 +87,6 @@ export function TopBar() {
       <TopBarTitleTarget className="min-w-0 flex-1 !shrink" />
 
       <TopBarActionsTarget className="flex items-center gap-2" />
-      <span
-        className="flex h-8 items-center gap-1.5 rounded-lg border border-warning/40 bg-warning-soft px-2.5 text-[11px] font-bold tracking-wide text-warning uppercase"
-        title="All data in this demo is synthetic"
-      >
-        <FlaskConical className="size-3.5" aria-hidden />
-        Simulated
-      </span>
       <OrgSwitcher />
       <SettingsMenu />
       <ThemeToggle />
@@ -143,7 +137,7 @@ function OrgSwitcher() {
     >
       {(close) => (
         <div>
-          <p className="px-2 pt-1 pb-2 text-[11px] font-bold tracking-wide text-faint uppercase">Workspace</p>
+          <p className="px-2 pt-1 pb-2 text-[11px] font-bold tracking-wide text-faint uppercase">Workspace · all data simulated</p>
           {sorted.map((org) => (
             <button
               key={org.id}

@@ -12,7 +12,7 @@ export const nodeKey = (kind: string) => `node.${kind}`;
 
 /** CSS variable (without --) that supplies an entry's default colour. */
 export function defaultVar(key: string): string {
-  if (key === SHIPMENT_KEY) return 'text';
+  if (key === SHIPMENT_KEY) return 'accent';
   const [group, id] = key.split('.');
   if (group === 'route') return ROUTE_STATUS[id]?.cssVar ?? 'success';
   if (group === 'node') return NODE_KIND[id]?.cssVar ?? 'accent';

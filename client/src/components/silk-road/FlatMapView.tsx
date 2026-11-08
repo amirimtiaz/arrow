@@ -15,7 +15,7 @@ import { Minus, Plus, RotateCcw } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import type { Disruption, Node, Route } from '@/module_bindings/ops/types';
 import { cssColor, nodeKey, routeKey, SHIPMENT_KEY } from '@/lib/ops/legend';
-import { NODE_KIND, ROUTE_STATUS } from '@/lib/ops/status';
+import { MODE, NODE_KIND, ROUTE_STATUS } from '@/lib/ops/status';
 import type { MarkerStyle } from '@/lib/settings';
 import { BORDERS, COUNTRIES, displayedProgress, movementFactor, SamplerCache, visibleRoutes, type AnimatedShipment } from './map-data';
 import type { GlobeViewProps } from './GlobeView';
@@ -258,6 +258,7 @@ export default function FlatMapView(props: GlobeViewProps) {
                 route.status === 'rerouted' ? '6 4' : route.mode === 'air' ? '2 4' : route.status === 'disrupted' ? '5 3' : undefined
               }
               opacity={route.status === 'healthy' ? 0.75 : 1}
+              markerEnd={`url(#arrow-head-${ROUTE_STATUS[route.status] ? route.status : 'healthy'})`}
               className="cursor-pointer"
               onClick={() => onSelectRoute(route.id)}
             >
@@ -328,7 +329,11 @@ export default function FlatMapView(props: GlobeViewProps) {
 
   useEffect(() => {
     let frame = 0;
-    const radius = String(1.2 + shipSize * 0.7);
+    // Vehicles are badges: a status-coloured disc with the ship / plane / train / truck glyph in white.
+    const r = 4 + shipSize * 1.5;
+    const radius = String(r);
+    const icon = r * 1.25;
+    const NS = 'http://www.w3.org/2000/svg';
     const animate = () => {
       const group = dotsRef.current;
       if (group) {
@@ -337,7 +342,7 @@ export default function FlatMapView(props: GlobeViewProps) {
         const width = widthRef.current;
         const height = heightRef.current;
         let trackedXY: XY | null = null;
-        const positions: { id: number; xy: XY; fill: string }[] = [];
+        const positions: { id: number; xy: XY; fill: string; mode: string }[] = [];
         for (const s of shipmentsRef.current.values()) {
           const route = routesRef.current.get(s.routeId);
           if (!route || route.status === 'standby') continue;
@@ -353,7 +358,7 @@ export default function FlatMapView(props: GlobeViewProps) {
                 : s.status === 'rerouted'
                   ? 'var(--cyan)'
                   : shipmentFill;
-          positions.push({ id: s.id, xy, fill });
+          positions.push({ id: s.id, xy, fill, mode: route.mode });
         }
 
         // Ease the camera toward the tracked dot (the nearest of its wrapped copies) until the user drags away.
@@ -373,27 +378,38 @@ export default function FlatMapView(props: GlobeViewProps) {
           }
         }
 
-        const dots: { id: number; x: number; y: number; fill: string }[] = [];
+        const dots: { id: number; x: number; y: number; fill: string; mode: string }[] = [];
         for (const p of positions) {
-          for (const [x, y] of copiesOf(p.xy, v, world, width, 8)) dots.push({ id: p.id, x, y, fill: p.fill });
+          for (const [x, y] of copiesOf(p.xy, v, world, width, 8)) dots.push({ id: p.id, x, y, fill: p.fill, mode: p.mode });
         }
         while (group.childNodes.length < dots.length) {
-          const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-          // A wide invisible stroke makes the small dots easy to click.
-          circle.setAttribute('stroke', 'transparent');
-          circle.setAttribute('stroke-width', '10');
+          const badge = document.createElementNS(NS, 'g');
+          badge.style.cursor = 'pointer';
+          const circle = document.createElementNS(NS, 'circle');
+          circle.setAttribute('stroke', 'rgba(8,15,26,0.85)');
+          circle.setAttribute('stroke-width', '1.5');
           circle.setAttribute('pointer-events', 'all');
-          circle.style.cursor = 'pointer';
-          group.appendChild(circle);
+          const glyph = document.createElementNS(NS, 'use');
+          glyph.setAttribute('pointer-events', 'none');
+          glyph.style.color = '#ffffff';
+          badge.append(circle, glyph);
+          group.appendChild(badge);
         }
         while (group.childNodes.length > dots.length) group.lastChild?.remove();
         dots.forEach((d, i) => {
-          const circle = group.childNodes[i] as SVGCircleElement;
-          circle.setAttribute('cx', d.x.toFixed(1));
-          circle.setAttribute('cy', d.y.toFixed(1));
+          const badge = group.childNodes[i] as SVGGElement;
+          badge.setAttribute('transform', `translate(${d.x.toFixed(1)} ${d.y.toFixed(1)})`);
+          badge.dataset.id = String(d.id);
+          const circle = badge.firstChild as SVGCircleElement;
           circle.setAttribute('r', radius);
           circle.setAttribute('fill', d.fill);
-          circle.dataset.id = String(d.id);
+          const glyph = badge.lastChild as SVGUseElement;
+          const href = `#arrow-veh-${MODE[d.mode] ? d.mode : 'truck'}`;
+          if (glyph.getAttribute('href') !== href) glyph.setAttribute('href', href);
+          glyph.setAttribute('x', (-icon / 2).toFixed(1));
+          glyph.setAttribute('y', (-icon / 2).toFixed(1));
+          glyph.setAttribute('width', icon.toFixed(1));
+          glyph.setAttribute('height', icon.toFixed(1));
         });
 
         // Pin the info card to the copy of the tracked dot nearest the centre.
@@ -443,6 +459,24 @@ export default function FlatMapView(props: GlobeViewProps) {
       {size.width > 0 && (
         <svg width={size.width} height={size.height} className="block">
           <rect width={size.width} height={size.height} fill="var(--globe-ocean)" opacity={0.55} />
+          {/* Arrowheads at each lane's destination, sized in screen pixels whatever the zoom. */}
+          <defs>
+            {['healthy', 'at_risk', 'disrupted', 'rerouted'].map((status) => (
+              <marker
+                key={status}
+                id={`arrow-head-${status}`}
+                viewBox="0 0 10 10"
+                refX="9"
+                refY="5"
+                markerUnits="userSpaceOnUse"
+                markerWidth={9 / view.k}
+                markerHeight={9 / view.k}
+                orient="auto"
+              >
+                <path d="M0,0 L10,5 L0,10 z" fill={cssColor(routeKey(status), colors)} />
+              </marker>
+            ))}
+          </defs>
           <g transform={`translate(${view.x},${view.y}) scale(${view.k})`}>
             {copyIndices.map((i) => (
               <g key={i} transform={`translate(${i * world.width},0)`}>
@@ -458,10 +492,17 @@ export default function FlatMapView(props: GlobeViewProps) {
               ))
             )}
           </g>
+          <defs>
+            {Object.entries(MODE).map(([mode, meta]) => (
+              <symbol key={mode} id={`arrow-veh-${mode}`} viewBox="0 0 24 24">
+                <meta.icon strokeWidth={2.4} />
+              </symbol>
+            ))}
+          </defs>
           <g
             ref={dotsRef}
             onClick={(e) => {
-              const id = (e.target as SVGElement).dataset?.id;
+              const id = ((e.target as Element).closest('[data-id]') as SVGElement | null)?.dataset.id;
               if (id) onTrackShipment(Number(id));
             }}
           />

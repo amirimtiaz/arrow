@@ -10,13 +10,15 @@ Supply chains power the global economy, yet critical decisions depend on separat
 
 | Area | What you see |
 |---|---|
-| **Silk Road** (`/app`) | A live 3D globe (or 2D map) of every lane: sea routes on real waypoints (Suez, Malacca, Panama, the Cape), air arcs, truck and rail. Shipments move in real time. Disruptions pulse red with a clickable "!" marker. |
+| **Silk Road** (`/app`) | A live 3D globe (or 2D map) of every lane: sea routes on real waypoints (Suez, Malacca, Panama, the Cape), air arcs, truck and rail. Ships, planes, trains and trucks move in real time, and every lane ends in an arrow at its destination. An activity heatmap shades countries blue and raises pillars on hubs by how much cargo moves through them. Hover a hub for a simulated live camera view with its live lane counts. Disruptions pulse red with a clickable "!" marker. |
 | **Agentic response** | When a disruption appears, NVIDIA Nemotron agents start on their own: plan → tool calls → scored options → a proposal a manager approves. Approval runs a SpacetimeDB reducer and every viewer's globe redraws the reroute. |
 | **Ask Arrow** | Ask a question in plain language. It becomes an agent run with tool calls over live data, not a chat box with canned answers. |
 | **Grok News Scout** | A bot that reads this week's real headlines (Google News) about your ports, hubs and canals and uses Grok 4.7 (free via Puter.js) to flag storms, strikes, closures and cyberattacks that threaten your lanes. Findings appear as "N" markers. One click escalates a signal into a disruption, which wakes the Nemotron agents. |
 | **Cyber Control Tower** (`/app/control-tower`) | An isolated, invite-only incident command center: NIST SP 800-61 incident record, scope register, timeline, tasks, real-time chat and a hash-chained audit log. |
 | **Analytics** (`/app/analytics`) | Tiger Data time-series history: risk over time, security events per minute, riskiest lanes, and SQL z-score anomaly detection that can open disruptions on its own. |
-| **Live feed** (`/app/feed`) | "No digging" updates: what changed, why it matters, what is recommended. Anyone can escalate an item to executives or export the feed as CSV. |
+| **Live feed** (`/app/feed`) | "No digging" updates: what changed, why it matters, what is recommended. Every entry offers three response options, each showing its steps, a time estimate and how important it is (review the agents' plan, alert every branch, escalate to executives). The feed exports as CSV. |
+| **Communications** (`/app/communications`) | Branch-to-branch messages and reports, with a role photo for each division. Messages in other languages (the Shenzhen office writes in Chinese) translate to English in one click. |
+| **Conquest GIS** (`/app/conquest`) | A market-expansion prototype: candidate sites on a map with foot traffic, nearby competitors, contract rates, 5-year cost projections, landlord ratings from past tenants, a deal-strength score computed in code and a Nemotron deal memo. Listings are simulated. |
 
 ### Three plans, three scales
 
@@ -156,6 +158,8 @@ The agent code is in `worker/src/agent/`.
   3. The **Risk Auditor** reviews the proposal independently before any human sees it (`get_current_proposal`, `review_proposal`). If it challenges the plan, the Planner either revises (the new proposal replaces the old one) or keeps it with a justification. The manager sees the verdict next to Approve.
   4. For cyber incidents, **Cyber Triage** drafts a NIST/CISA incident for the Control Tower (`draft_ir_incident`) without touching IR.
   5. After a manager approves, the **Recovery Monitor** measures the result (`measure_recovery`: on-time %, value at risk and risk index before vs after) and posts a verified outcome. This closes the plan → act → verify loop.
+- **Talk to the agents directly:** the chat on the Current AI Agents tab lets anyone pick one to five of the agents and ask a question. Each chosen agent answers in turn from its own role, over the same live read-only tools, and its working steps stream live (`handleAgentChat` in `worker/src/agent/runner.ts`). Chat can never change state.
+- **Conquest GIS deal memo:** the Deal Evaluator agent reads one listing's facts plus a deal score computed in code, then writes a verdict, risks and a negotiation ask. It never recomputes the score.
 - **External tools:** live Tiger Data history; Grok news signals feed the same event stream (see SpaceXSI below).
 - **Humans decide:** state-changing actions always wait for an operations manager. Low-risk briefings run automatically.
 - **Code calculates, the LLM chooses:** every number comes from a tool output. The scoring is unit-tested (`spacetime/ops/test/scoring.test.ts`), and the three flagship scenarios have three different optimal strategies.

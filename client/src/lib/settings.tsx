@@ -14,10 +14,12 @@ export interface MapSettings {
   labelSize: number;
   /** Size of the moving shipment dots. */
   vehicleSize: number;
-  /** Globe auto-rotation speed; 0 (the default) keeps the globe still. */
+  /** Globe auto-rotation speed; a gentle spin by default, 0 keeps the globe still. */
   autoRotate: number;
   /** Show the movable legend over the map. */
   showLegend: boolean;
+  /** Country activity heatmap and the rising activity pillars on hubs. */
+  showActivity: boolean;
   /** Show the Live news card (Grok News Scout) on the map. */
   showNews: boolean;
   /** Show the live supply chain risk monitor card on the map. */
@@ -46,10 +48,11 @@ export interface AppSettings {
 
 export const DEFAULT_SETTINGS: AppSettings = {
   map: {
-    labelSize: 0.6,
-    vehicleSize: 2,
-    autoRotate: 0,
+    labelSize: 1.5,
+    vehicleSize: 4,
+    autoRotate: 0.35,
     showLegend: true,
+    showActivity: true,
     showNews: true,
     showRisk: true,
     markerStyle: 'dots',
@@ -61,6 +64,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
 };
 
 const STORAGE_KEY = 'arrow-settings-v1';
+/** Bumped when defaults change in a way saved settings should pick up (v2: max label/vehicle size, gentle spin). */
+const SETTINGS_VERSION = 2;
 
 interface SettingsApi {
   settings: AppSettings;
@@ -79,7 +84,15 @@ function load(): AppSettings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return DEFAULT_SETTINGS;
-    const saved = JSON.parse(raw) as Partial<AppSettings> & { map?: { legendPos?: { x: number; y: number } | null } };
+    const saved = JSON.parse(raw) as Partial<AppSettings> & { v?: number; map?: { legendPos?: { x: number; y: number } | null } };
+    if (saved.map && (saved.v ?? 1) < SETTINGS_VERSION) {
+      // Older saves predate the new defaults: take the new sizes and rotation, keep everything else.
+      const rest: Partial<MapSettings> = { ...(saved.map as Partial<MapSettings>) };
+      delete rest.labelSize;
+      delete rest.vehicleSize;
+      delete rest.autoRotate;
+      saved.map = rest as typeof saved.map;
+    }
     const positions = { ...saved.map?.positions };
     // Older saves kept only the legend position.
     if (saved.map?.legendPos && !positions.legend) positions.legend = saved.map.legendPos;
@@ -105,7 +118,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!loaded.current) return;
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...settings, v: SETTINGS_VERSION }));
     } catch {
       /* private mode or storage blocked: settings just won't persist */
     }

@@ -73,7 +73,8 @@ interface CommsApi {
 }
 
 const Context = createContext<CommsApi | null>(null);
-const PREVIEW_KEY = 'arrow-comms-preview-v1';
+// v2: sample messages now include the Shenzhen office writing in Chinese.
+const PREVIEW_KEY = 'arrow-comms-preview-v2';
 const ALL_BRANCHES = '0';
 
 const branchName = (department: string, city: string) => `${department} · ${city}`;

@@ -164,7 +164,7 @@ function MapMainPage({ onOpenLegend }: { onOpenLegend(): void }) {
       />
       <SliderRow
         label="Vehicle size"
-        hint="Size of the moving shipment dots"
+        hint="Size of the moving ship, plane, train and truck icons"
         value={map.vehicleSize}
         min={1}
         max={4}
@@ -174,14 +174,23 @@ function MapMainPage({ onOpenLegend }: { onOpenLegend(): void }) {
       />
       <SliderRow
         label="Auto rotation"
-        hint="Spins the 3D globe. 0 keeps it still."
+        hint="Slowly spins the 3D globe; pauses while you drag or follow an alert. 0 keeps it still."
         value={map.autoRotate}
         min={0}
-        max={1.5}
-        step={0.1}
-        format={(v) => (v === 0 ? 'Off' : `${v.toFixed(1)}×`)}
+        max={2}
+        step={0.05}
+        format={(v) => (v === 0 ? 'Off' : `${v.toFixed(2)}×`)}
         onChange={(v) => updateMap({ autoRotate: v })}
       />
+
+      <div className="border-t border-line pt-2">
+        <SwitchRow
+          label="Activity heatmap"
+          hint={map.showActivity ? 'Countries shaded and hubs raised by shipment activity' : 'Hidden'}
+          checked={map.showActivity}
+          onChange={(v) => updateMap({ showActivity: v })}
+        />
+      </div>
 
       <div className="border-t border-line pt-2">
         <SwitchRow

@@ -1,7 +1,21 @@
 'use client';
 
 import clsx from 'clsx';
-import { Bot, CircleAlert, Cpu, Eye, ShieldCheck, TriangleAlert } from 'lucide-react';
+import {
+  Bot,
+  CheckCircle2,
+  CircleAlert,
+  CircleDashed,
+  Clock,
+  Eye,
+  Loader2,
+  MinusCircle,
+  ShieldAlert,
+  ShieldCheck,
+  TriangleAlert,
+  XCircle,
+  type LucideIcon,
+} from 'lucide-react';
 import { useMemo } from 'react';
 import type { AgentRun, Disruption } from '@/module_bindings/ops/types';
 import { formatPct, formatUsd, safeJson, timeAgo, tsToDate } from '@/lib/format';
@@ -9,6 +23,8 @@ import { AGENTS, prettyModel, useAgentService } from '@/lib/ops/agent';
 import { useKpis, useRunSteps } from '@/lib/ops/hooks';
 import { DISRUPTION_KIND, riskLevel, SEVERITY } from '@/lib/ops/status';
 import { ProgressBar, SectionLabel, StatusChip } from '@/components/ui/primitives';
+import { AGENT_PROFILES, AgentAvatar, type AvatarTone } from '@/components/agents/agent-avatars';
+
 /** Risk assessment and the Nemotron agent roster, shown on the Current AI Agents tab. */
 export function RiskAssessment({ disruption }: { disruption: Disruption | undefined }) {
   const k = useKpis();
@@ -87,13 +103,32 @@ function Gauge({ label, value, display, tone }: { label: string; value: number; 
   );
 }
 
+interface RosterStatus {
+  label: string;
+  className: string;
+  icon: LucideIcon;
+  tone: AvatarTone;
+}
+
+/** Each agent's state as colour + icon + text, plus the matching ring around its photo. */
+const ROSTER_STATUS = {
+  idle: { label: 'Idle', className: 'text-muted bg-panel-2', icon: CircleDashed, tone: 'idle' },
+  notNeeded: { label: 'Not needed', className: 'text-faint bg-panel-2', icon: MinusCircle, tone: 'muted' },
+  failed: { label: 'Failed', className: 'text-danger bg-danger-soft', icon: XCircle, tone: 'danger' },
+  working: { label: 'Working', className: 'text-accent bg-accent-soft', icon: Loader2, tone: 'working' },
+  challenged: { label: 'Challenged', className: 'text-warning bg-warning-soft', icon: ShieldAlert, tone: 'warning' },
+  concurs: { label: 'Concurs', className: 'text-success bg-success-soft', icon: ShieldCheck, tone: 'success' },
+  done: { label: 'Done', className: 'text-success bg-success-soft', icon: CheckCircle2, tone: 'success' },
+  afterApproval: { label: 'After approval', className: 'text-faint bg-panel-2', icon: Clock, tone: 'idle' },
+} satisfies Record<string, RosterStatus>;
+
 export function AgentRoster({ run, disruption }: { run: AgentRun | undefined; disruption: Disruption | undefined }) {
   const service = useAgentService();
   const steps = useRunSteps(run?.id);
 
   const roster = useMemo(
     () =>
-      AGENTS.map((agent) => {
+      AGENTS.map((agent, i) => {
         const mine = steps.filter((s) => s.agent === agent.name);
         const last = mine.at(-1);
         const notNeeded = agent.when === 'cyber' && !!disruption && disruption.kind !== 'cyber';
@@ -101,19 +136,16 @@ export function AgentRoster({ run, disruption }: { run: AgentRun | undefined; di
           agent.name === 'Risk Auditor'
             ? safeJson<{ verdict?: string }>(mine.find((s) => s.tool === 'review_proposal')?.inputJson ?? '', {}).verdict
             : undefined;
-        let status: { label: string; className: string } = { label: 'Idle', className: 'text-muted bg-panel-2' };
-        if (notNeeded) status = { label: 'Not needed', className: 'text-faint bg-panel-2' };
-        else if (run?.status === 'failed' && run.activeAgent === agent.name)
-          status = { label: 'Failed', className: 'text-danger bg-danger-soft' };
-        else if (run?.status === 'running' && run.activeAgent === agent.name)
-          status = { label: 'Working', className: 'text-accent bg-accent-soft animate-soft-pulse' };
-        else if (verdict === 'challenge') status = { label: 'Challenged', className: 'text-warning bg-warning-soft' };
-        else if (verdict === 'concur') status = { label: 'Concurs', className: 'text-success bg-success-soft' };
-        else if (mine.length > 0) status = { label: 'Done', className: 'text-success bg-success-soft' };
-        else if (agent.when === 'approved' && run?.status === 'awaiting_approval')
-          status = { label: 'After approval', className: 'text-faint bg-panel-2' };
+        let status: RosterStatus = ROSTER_STATUS.idle;
+        if (notNeeded) status = ROSTER_STATUS.notNeeded;
+        else if (run?.status === 'failed' && run.activeAgent === agent.name) status = ROSTER_STATUS.failed;
+        else if (run?.status === 'running' && run.activeAgent === agent.name) status = ROSTER_STATUS.working;
+        else if (verdict === 'challenge') status = ROSTER_STATUS.challenged;
+        else if (verdict === 'concur') status = ROSTER_STATUS.concurs;
+        else if (mine.length > 0) status = ROSTER_STATUS.done;
+        else if (agent.when === 'approved' && run?.status === 'awaiting_approval') status = ROSTER_STATUS.afterApproval;
         const detail = notNeeded ? 'Only engaged for cyber disruptions' : (last?.title ?? agent.role);
-        return { ...agent, status, detail, steps: mine.length };
+        return { ...agent, profile: AGENT_PROFILES[i], status, detail, steps: mine.length };
       }),
     [steps, run, disruption]
   );
@@ -145,24 +177,38 @@ export function AgentRoster({ run, disruption }: { run: AgentRun | undefined; di
         </p>
       )}
       <ol className="mt-2 divide-y divide-line overflow-hidden rounded-lg border border-line bg-panel">
-        {roster.map((agent, i) => (
-          <li key={agent.name} className="flex items-center gap-2 px-2.5 py-1.5" title={agent.detail}>
-            <span className="grid size-5 shrink-0 place-items-center rounded bg-accent-soft text-[10px] font-bold text-accent">
-              {i + 1}
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="flex items-center gap-1.5 text-[12px] font-bold text-fg">
-                <Cpu className="size-3 text-faint" aria-hidden />
-                {agent.name}
-                {agent.steps > 0 && <span className="text-[10px] font-normal text-faint">{agent.steps} steps</span>}
-              </p>
-              <p className="truncate text-[10.5px] text-muted">{agent.detail}</p>
-            </div>
-            <span className={clsx('shrink-0 rounded-md px-1.5 py-0.5 text-[9.5px] font-bold uppercase', agent.status.className)}>
-              {agent.status.label}
-            </span>
-          </li>
-        ))}
+        {roster.map((agent, i) => {
+          const StatusIcon = agent.status.icon;
+          return (
+            <li key={agent.name} className="flex items-center gap-2.5 px-2.5 py-1.5" title={agent.detail}>
+              <span className="relative shrink-0">
+                <AgentAvatar agent={agent.profile} size={26} tone={agent.status.tone} />
+                <span
+                  className="absolute -right-1 -bottom-1 grid size-4 place-items-center rounded-full border border-line bg-elevated text-[9px] font-bold text-muted tabular-nums"
+                  aria-label={`Step ${i + 1}`}
+                >
+                  {i + 1}
+                </span>
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="flex items-center gap-1.5 text-[12px] font-bold text-fg">
+                  <span className="truncate">{agent.name}</span>
+                  {agent.steps > 0 && <span className="shrink-0 text-[10px] font-normal text-faint">{agent.steps} steps</span>}
+                </p>
+                <p className="truncate text-[10.5px] text-muted">{agent.detail}</p>
+              </div>
+              <span
+                className={clsx(
+                  'inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[9.5px] font-bold uppercase',
+                  agent.status.className
+                )}
+              >
+                <StatusIcon className={clsx('size-3', agent.status.tone === 'working' && 'animate-spin')} aria-hidden />
+                {agent.status.label}
+              </span>
+            </li>
+          );
+        })}
       </ol>
       {service.model && <p className="mt-1.5 text-[10.5px] text-faint">Model: {prettyModel(service.model)} via build.nvidia.com</p>}
     </section>

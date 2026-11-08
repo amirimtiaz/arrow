@@ -71,6 +71,7 @@ function SilkRoadLayout() {
     labelSize: settings.map.labelSize,
     shipSize: settings.map.vehicleSize,
     rotateSpeed: settings.map.autoRotate,
+    showActivity: settings.map.showActivity,
     colors: settings.map.colors,
     markerStyle: settings.map.markerStyle,
     onSelectRoute: ui.setSelectedRouteId,

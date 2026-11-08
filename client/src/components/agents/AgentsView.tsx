@@ -2,23 +2,23 @@
 
 /**
  * Current AI Agents tab: everything about the Nemotron agents in one place, moved off the Silk Road map so the map
- * can use the full screen. Left: which disruption to follow, its risk assessment and the agent roster. Centre: the
+ * can use the full screen. Left: which disruption to follow, its risk assessment, the agent roster and a direct chat
+ * with any of the five agents. Centre: the
  * live agent trace (reasoning, options, decision with Approve/Reject, execution). Right: the system event log.
  * The header carries the agent status and Change Route.
  */
 import clsx from 'clsx';
-import { RefreshCw, Shuffle, Siren, TriangleAlert } from 'lucide-react';
+import { RefreshCw, Shuffle } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { useCurrentOrg } from '@/lib/ops/client';
-import { timeAgo, tsToDate } from '@/lib/format';
-import { useDisruptions, useOptions, useRunForDisruption } from '@/lib/ops/hooks';
-import { DISRUPTION_KIND, SEVERITY } from '@/lib/ops/status';
+import { useOptions, useRunForDisruption } from '@/lib/ops/hooks';
 import { TopBarActions, TopBarTitle } from '@/components/shell/TopBarSlots';
-import { SectionLabel, StatusChip } from '@/components/ui/primitives';
 import { AgentRoster, RiskAssessment } from '@/components/silk-road/AgentPanels';
 import { AgentTrace } from '@/components/silk-road/AgentTrace';
 import { EventLog } from '@/components/silk-road/BottomStrip';
 import { SilkRoadStateProvider, useFocusedDisruption, useSilkRoad } from '@/components/silk-road/SilkRoadState';
+import { AgentChat } from './AgentChat';
+import { DisruptionPicker } from './DisruptionPicker';
 
 function parseFocus(value: string | null): bigint | null {
   const match = value?.match(/^disruption:(\d+)$/);
@@ -41,10 +41,16 @@ function AgentsLayout() {
   return (
     <div className="flex h-full min-h-0 gap-3 p-3">
       <AgentsTopBar />
-      <aside className="scroll-thin flex w-[360px] shrink-0 flex-col gap-3 overflow-y-auto rounded-xl border border-line bg-elevated p-4">
-        <DisruptionPicker />
-        <RiskAssessment disruption={disruption} />
-        <AgentRoster run={run} disruption={disruption} />
+      {/* The chat is pinned to the bottom of the column; only the panels above it scroll. */}
+      <aside className="flex w-[360px] shrink-0 flex-col overflow-hidden rounded-xl border border-line bg-elevated">
+        <div className="scroll-thin flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
+          <DisruptionPicker />
+          <RiskAssessment disruption={disruption} />
+          <AgentRoster run={run} disruption={disruption} />
+        </div>
+        <div className="flex h-[48%] min-h-[320px] shrink-0 flex-col border-t border-line px-4 pt-3 pb-4">
+          <AgentChat />
+        </div>
       </aside>
       <main className="flex min-w-0 flex-1 flex-col rounded-xl border border-line bg-elevated p-4" aria-label="Agent trace">
         <AgentTrace run={run} disruption={disruption} />
@@ -53,64 +59,6 @@ function AgentsLayout() {
         <EventLog />
       </aside>
     </div>
-  );
-}
-
-/** Which disruption the trace follows: active ones first, then the most recent resolved ones. */
-function DisruptionPicker() {
-  const { all } = useDisruptions();
-  const focused = useFocusedDisruption();
-  const { setFocusId } = useSilkRoad();
-  const list = [...all]
-    .sort((a, b) => Number(a.status === 'resolved') - Number(b.status === 'resolved') || Number(b.id - a.id))
-    .slice(0, 8);
-
-  return (
-    <section aria-label="Disruptions">
-      <SectionLabel
-        icon={Siren}
-        right={<span className="text-[11px] text-faint">{all.filter((d) => d.status !== 'resolved').length} active</span>}
-      >
-        Following
-      </SectionLabel>
-      {list.length === 0 ? (
-        <p className="mt-2 rounded-lg border border-dashed border-line px-3 py-3 text-[12px] text-muted">
-          No disruptions yet. Trigger a scenario on Silk Road and the agents start on their own.
-        </p>
-      ) : (
-        <ul className="mt-2 space-y-1">
-          {list.map((d) => {
-            const KindIcon = DISRUPTION_KIND[d.kind]?.icon ?? TriangleAlert;
-            const selected = focused?.id === d.id;
-            const resolved = d.status === 'resolved';
-            return (
-              <li key={String(d.id)}>
-                <button
-                  type="button"
-                  onClick={() => setFocusId(d.id)}
-                  aria-pressed={selected}
-                  className={clsx(
-                    'flex w-full items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left',
-                    selected ? 'border-accent/50 bg-accent-soft' : 'border-line bg-panel hover:bg-panel-hover'
-                  )}
-                >
-                  <KindIcon className={clsx('size-3.5 shrink-0', resolved ? 'text-faint' : 'text-danger')} aria-hidden />
-                  <span className="min-w-0 flex-1">
-                    <span className={clsx('block truncate text-[12.5px] font-semibold', resolved ? 'text-muted' : 'text-fg')}>
-                      {d.title}
-                    </span>
-                    <span className="block text-[10.5px] text-faint">
-                      {resolved ? 'Resolved' : d.status === 'mitigating' ? 'Mitigating' : 'Active'} · {timeAgo(tsToDate(d.createdAt))}
-                    </span>
-                  </span>
-                  {!resolved && <StatusChip meta={SEVERITY[d.severity] ?? SEVERITY.moderate} />}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </section>
   );
 }
 

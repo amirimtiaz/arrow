@@ -6,33 +6,22 @@
  * export the feed as CSV for a report.
  */
 import clsx from 'clsx';
-import { ArrowUpRight, Briefcase, Download, Globe2, Megaphone, Rss, Search } from 'lucide-react';
-import Link from 'next/link';
+import { Briefcase, Download, Rss, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import type { FeedItem } from '@/module_bindings/ops/types';
-import { timeAgo, tsToDate } from '@/lib/format';
-import { useCurrentOrg, useMyProfile, useOps } from '@/lib/ops/client';
-import { useFeed } from '@/lib/ops/hooks';
-import { FEED_SEVERITY } from '@/lib/ops/status';
+import { tsToDate } from '@/lib/format';
+import { useCurrentOrg } from '@/lib/ops/client';
+import { useDisruptions, useFeed } from '@/lib/ops/hooks';
 import { TopBarTitle } from '@/components/shell/TopBarSlots';
-import { Button, EmptyState, Panel, StatusChip } from '@/components/ui/primitives';
-import { errorMessage, useToast } from '@/components/ui/toast';
+import { Button, EmptyState, Panel } from '@/components/ui/primitives';
+import { FeedRow } from './FeedRow';
 import { RiskColumn } from './RiskColumn';
 
 const SEVERITIES = ['all', 'critical', 'warning', 'info', 'success'] as const;
-const CATEGORY_LABEL: Record<string, string> = {
-  system: 'System',
-  scenario: 'Disruption',
-  agent: 'Agent',
-  action: 'Action',
-  cyber: 'Cyber',
-  briefing: 'Briefing',
-  news: 'Live news',
-};
-
 export function FeedView() {
   const feed = useFeed();
   const org = useCurrentOrg();
+  const { all: disruptions } = useDisruptions();
+  const disruptionsById = useMemo(() => new Map(disruptions.map((d) => [String(d.id), d])), [disruptions]);
   const [severity, setSeverity] = useState<(typeof SEVERITIES)[number]>('all');
   const [executiveOnly, setExecutiveOnly] = useState(false);
   const [query, setQuery] = useState('');
@@ -134,7 +123,11 @@ export function FeedView() {
           ) : (
             <ol className="space-y-2">
               {items.map((item) => (
-                <FeedRow key={String(item.id)} item={item} />
+                <FeedRow
+                  key={String(item.id)}
+                  item={item}
+                  disruption={item.link.startsWith('disruption:') ? disruptionsById.get(item.link.slice(11)) : undefined}
+                />
               ))}
             </ol>
           )}
@@ -147,76 +140,3 @@ export function FeedView() {
   );
 }
 
-function FeedRow({ item }: { item: FeedItem }) {
-  const meta = FEED_SEVERITY[item.severity] ?? FEED_SEVERITY.info;
-  const profile = useMyProfile();
-  const { conn } = useOps();
-  const toast = useToast();
-  const [busy, setBusy] = useState(false);
-  const disruptionLink = item.link.startsWith('disruption:') ? `/app?focus=${item.link}` : null;
-
-  const escalate = async () => {
-    if (!conn) return;
-    setBusy(true);
-    try {
-      await conn.reducers.escalateFeedItem({ feedItemId: item.id });
-      toast({ title: 'Escalated to executives', tone: 'success' });
-    } catch (err) {
-      toast({ title: 'Could not escalate', description: errorMessage(err), tone: 'error' });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <li>
-      <Panel className="flex gap-3 p-3.5">
-        <span className={clsx('mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg', meta.soft, meta.text)}>
-          <meta.icon className="size-4" aria-hidden />
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted">
-            <StatusChip meta={meta} />
-            <span className="rounded-md bg-panel-2 px-1.5 py-0.5 font-semibold">{CATEGORY_LABEL[item.category] ?? item.category}</span>
-            {(item.audience === 'executive' || item.escalated) && (
-              <span className="flex items-center gap-1 rounded-md bg-violet-soft px-1.5 py-0.5 font-semibold text-violet">
-                <Briefcase className="size-3" aria-hidden />
-                Executive
-              </span>
-            )}
-            <span>{item.author}</span>·<time dateTime={tsToDate(item.ts).toISOString()}>{timeAgo(tsToDate(item.ts))}</time>
-          </div>
-          <p className="mt-1 text-[13.5px] leading-relaxed text-fg">{item.text}</p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {disruptionLink && (
-              <Link
-                href={disruptionLink}
-                className="flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[11.5px] font-semibold text-muted hover:text-fg"
-              >
-                <Globe2 className="size-3.5" aria-hidden />
-                View on Silk Road
-              </Link>
-            )}
-            {!item.escalated && item.audience !== 'executive' && profile && (
-              <button
-                type="button"
-                disabled={busy}
-                onClick={escalate}
-                className="flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[11.5px] font-semibold text-muted hover:text-fg disabled:opacity-50"
-              >
-                <ArrowUpRight className="size-3.5" aria-hidden />
-                Escalate to executives
-              </button>
-            )}
-            {item.category === 'briefing' && (
-              <span className="flex items-center gap-1 text-[11px] text-faint">
-                <Megaphone className="size-3" aria-hidden />
-                Shared with all employees
-              </span>
-            )}
-          </div>
-        </div>
-      </Panel>
-    </li>
-  );
-}

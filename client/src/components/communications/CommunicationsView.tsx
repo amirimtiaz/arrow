@@ -12,20 +12,23 @@ import {
   Building2,
   Crown,
   FileBarChart,
+  Languages,
   Loader2,
   MapPin,
   MessageSquare,
   Plus,
   Radio,
   Send,
-  Users,
   WifiOff,
 } from 'lucide-react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { timeAgo } from '@/lib/format';
+import { branchPhoto } from '@/lib/ops/branch-photos';
 import { useCurrentOrg } from '@/lib/ops/client';
 import { ALL_BRANCHES, useComms, type BranchView, type MessageKind, type MessageView, type ReportMetrics } from '@/lib/ops/comms';
+import { detectLanguage, translateToEnglish } from '@/lib/ops/translations';
 import { COUNTRIES, DEPARTMENTS, LOCATIONS } from '@/lib/locations';
 import { TopBarTitle } from '@/components/shell/TopBarSlots';
 import { Button, Dialog, EmptyState, SectionLabel } from '@/components/ui/primitives';
@@ -75,12 +78,12 @@ export function CommunicationsView() {
     <div className="flex h-full min-h-0 flex-col">
       {title}
       <div className="flex items-center gap-3 border-b border-line bg-elevated px-4 py-2.5">
-        <ModeBadge mode={mode} />
-        <p className="min-w-0 truncate text-[12px] text-muted">
-          {mode === 'live'
-            ? 'Every branch sees new messages instantly over SpacetimeDB.'
-            : 'Preview in this browser only. Publish the updated ops module to share branches between people.'}
-        </p>
+        {mode === 'live' && (
+          <>
+            <ModeBadge mode={mode} />
+            <p className="min-w-0 truncate text-[12px] text-muted">Every branch sees new messages instantly over SpacetimeDB.</p>
+          </>
+        )}
         <Button
           variant="primary"
           icon={Plus}
@@ -176,14 +179,7 @@ function BranchDirectory(props: {
                       b.id === selectedId ? 'border-accent/50 bg-accent-soft' : 'border-line bg-panel hover:bg-panel-hover'
                     )}
                   >
-                    <span
-                      className={clsx(
-                        'grid size-7 shrink-0 place-items-center rounded-lg',
-                        b.isHq ? 'bg-warning-soft text-warning' : 'bg-panel-2 text-muted'
-                      )}
-                    >
-                      {b.isHq ? <Crown className="size-3.5" aria-hidden /> : <Users className="size-3.5" aria-hidden />}
-                    </span>
+                    <BranchAvatar branch={b} size="sm" />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[13px] font-semibold text-fg">{b.department}</span>
                       <span className="block truncate text-[11px] text-muted">{b.city}</span>
@@ -223,14 +219,7 @@ function BranchChannel({ branch, branches, messages }: { branch: BranchView; bra
   return (
     <section className="flex min-w-0 flex-1 flex-col rounded-xl border border-line bg-elevated" aria-label={`${branch.name} channel`}>
       <header className="flex items-center gap-3 border-b border-line px-4 py-3">
-        <span
-          className={clsx(
-            'grid size-9 place-items-center rounded-xl',
-            branch.isHq ? 'bg-warning-soft text-warning' : 'bg-accent-soft text-accent'
-          )}
-        >
-          {branch.isHq ? <Crown className="size-4" aria-hidden /> : <Building2 className="size-4" aria-hidden />}
-        </span>
+        <BranchAvatar branch={branch} size="lg" />
         <div className="min-w-0">
           <h2 className="truncate text-[15px] font-bold text-fg">{branch.name}</h2>
           <p className="truncate text-[11.5px] text-muted">
@@ -262,8 +251,37 @@ function MessageCard({ message, outgoing, byId }: { message: MessageView; outgoi
   const from = byId.get(message.fromBranchId);
   const to = message.toBranchId === ALL_BRANCHES ? 'All branches' : (byId.get(message.toBranchId)?.name ?? 'Unknown branch');
   const report = message.kind === 'report';
+  const language = detectLanguage(`${message.subject} ${message.body}`);
+  const toast = useToast();
+  const [translated, setTranslated] = useState<{ subject: string; body: string } | null>(null);
+  const [showTranslation, setShowTranslation] = useState(false);
+  const [translating, setTranslating] = useState(false);
+
+  const toggleTranslation = async () => {
+    if (!language) return;
+    if (translated) {
+      setShowTranslation((v) => !v);
+      return;
+    }
+    setTranslating(true);
+    try {
+      const [subject, body] = await Promise.all([
+        translateToEnglish(message.subject, language.code),
+        translateToEnglish(message.body, language.code),
+      ]);
+      setTranslated({ subject, body });
+      setShowTranslation(true);
+    } catch (err) {
+      toast({ title: 'Could not translate', description: errorMessage(err), tone: 'error' });
+    } finally {
+      setTranslating(false);
+    }
+  };
+  const shown = showTranslation && translated ? translated : { subject: message.subject, body: message.body };
+
   return (
-    <li className={clsx('flex', outgoing ? 'justify-end' : 'justify-start')}>
+    <li className={clsx('flex items-start gap-2.5', outgoing && 'flex-row-reverse')}>
+      {from ? <BranchAvatar branch={from} size="md" /> : <span className="size-9 shrink-0 rounded-full bg-panel-2" aria-hidden />}
       <article
         className={clsx(
           'max-w-[78%] rounded-xl border px-3.5 py-2.5',
@@ -280,15 +298,55 @@ function MessageCard({ message, outgoing, byId }: { message: MessageView; outgoi
               Report
             </span>
           )}
+          {language && (
+            <span className="rounded-md border border-line bg-panel-2 px-1.5 py-0.5 text-[10px] font-semibold text-fg">{language.label}</span>
+          )}
         </p>
-        <p className="mt-1 text-[13.5px] font-semibold text-fg">{message.subject}</p>
-        <p className="mt-0.5 text-[13px] leading-snug whitespace-pre-wrap text-fg/85">{message.body}</p>
+        <p className="mt-1 text-[13.5px] font-semibold text-fg" lang={showTranslation ? 'en' : language?.code}>
+          {shown.subject}
+        </p>
+        <p className="mt-0.5 text-[13px] leading-snug whitespace-pre-wrap text-fg/85" lang={showTranslation ? 'en' : language?.code}>
+          {shown.body}
+        </p>
         {report && <MetricChips metrics={message.metrics} />}
+        {language && (
+          <button
+            type="button"
+            onClick={toggleTranslation}
+            disabled={translating}
+            className="mt-1.5 flex items-center gap-1 rounded-md border border-accent/40 bg-accent-soft px-2 py-0.5 text-[11px] font-semibold text-accent hover:bg-accent/15 disabled:opacity-60"
+          >
+            {translating ? <Loader2 className="size-3 animate-spin" aria-hidden /> : <Languages className="size-3" aria-hidden />}
+            {translating ? 'Translating…' : showTranslation ? `Show original (${language.label})` : 'Translate to English'}
+          </button>
+        )}
+        {showTranslation && translated && <p className="mt-1 text-[10px] text-faint">Translated from {language?.label}</p>}
         <p className="mt-1.5 text-[10.5px] text-faint">
           {message.sentByName} · {timeAgo(new Date(message.sentAt))}
         </p>
       </article>
     </li>
+  );
+}
+
+/** Role photo for a branch, with a crown badge for upper management. */
+function BranchAvatar({ branch, size }: { branch: BranchView; size: 'sm' | 'md' | 'lg' }) {
+  const px = size === 'sm' ? 32 : size === 'md' ? 36 : 40;
+  return (
+    <span className="relative shrink-0" style={{ width: px, height: px }}>
+      <Image
+        src={branchPhoto(branch)}
+        alt=""
+        width={px}
+        height={px}
+        className={clsx('size-full rounded-full object-cover ring-2', branch.isHq ? 'ring-warning/70' : 'ring-line')}
+      />
+      {branch.isHq && (
+        <span className="absolute -right-1 -bottom-1 grid size-4 place-items-center rounded-full bg-warning text-white ring-2 ring-elevated">
+          <Crown className="size-2.5" aria-hidden />
+        </span>
+      )}
+    </span>
   );
 }
 
