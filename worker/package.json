@@ -5,10 +5,12 @@
   "description": "Thin worker: Nemotron agents, Tiger Data bridge and analytics API. Changes state only through arrow-ops reducers.",
   "type": "module",
   "scripts": {
-    "start": "tsx src/index.ts",
+    "start": "tsx src/supervise.ts",
+    "start:once": "tsx src/index.ts",
     "dev": "tsx watch src/index.ts",
     "identity": "tsx src/print-identity.ts",
     "tiger:setup": "tsx src/tiger/setup.ts",
+    "bench:models": "tsx src/bench-models.ts",
     "typecheck": "tsc --noEmit",
     "test:agent": "tsx test/agent-e2e.ts"
   },

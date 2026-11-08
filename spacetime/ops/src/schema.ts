@@ -11,6 +11,20 @@ import { schema, table, t } from 'spacetimedb/server';
 
 export const LatLng = t.object('LatLng', { lat: t.f64(), lng: t.f64() });
 
+/** One finding submitted by the Grok News Scout (runs in the browser via Puter.js). */
+export const NewsSignalInput = t.object('NewsSignalInput', {
+  headline: t.string(),
+  summary: t.string(),
+  region: t.string(),
+  kind: t.string(),
+  severity: t.string(),
+  relevance: t.f64(),
+  lat: t.f64(),
+  lng: t.f64(),
+  routeIds: t.array(t.u32()),
+  sources: t.array(t.string()),
+});
+
 /** Singleton (id = 1) holding module ownership and simulation state. */
 export const opsState = table(
   { name: 'ops_state', public: true },
@@ -326,6 +340,53 @@ export const telemetry = table(
   }
 );
 
+/**
+ * Real-world news signals found by the Grok News Scout bot (xAI live web + X
+ * search) that could affect this workspace's lanes. Humans decide whether a
+ * signal becomes a disruption.
+ */
+export const newsSignal = table(
+  { name: 'news_signal', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    orgId: t.u32().index('btree'),
+    scanId: t.u64(),
+    ts: t.timestamp(),
+    headline: t.string(),
+    summary: t.string(),
+    region: t.string(),
+    kind: t.string(), // weather | port_congestion | strike | blockage | cyber | geopolitical | accident
+    severity: t.string(), // watch | warning | critical
+    relevance: t.f64(), // 0..1
+    lat: t.f64(),
+    lng: t.f64(),
+    routeIds: t.array(t.u32()),
+    sourcesJson: t.string(), // JSON array of URLs
+    status: t.string(), // new | escalated | dismissed
+    disruptionId: t.u64(),
+    decidedByName: t.string(),
+  }
+);
+
+/** One Grok News Scout pass (requested by a person or by the bot's schedule). */
+export const newsScan = table(
+  { name: 'news_scan', public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    orgId: t.u32().index('btree'),
+    trigger: t.string(), // manual | auto
+    requestedByName: t.string(),
+    status: t.string(), // queued | running | completed | failed
+    model: t.string(),
+    signalCount: t.u32(),
+    /** Real articles Grok reviewed in this scan. */
+    searchCalls: t.u32(),
+    error: t.string(),
+    startedAt: t.timestamp(),
+    finishedAt: t.option(t.timestamp()),
+  }
+);
+
 /** Simulated security telemetry (recent rows only). Mirrored to Tiger. */
 export const securityEvent = table(
   { name: 'security_event', public: true },
@@ -360,6 +421,8 @@ const spacetimedb = schema({
   riskSample,
   telemetry,
   securityEvent,
+  newsSignal,
+  newsScan,
 });
 
 export default spacetimedb;

@@ -91,6 +91,13 @@ Backups (not targeted): PNC, Toyota, Capital One, Photon.
     - Validate tool arguments against a schema and retry once on a malformed call.
     - Time out and show a visible failure state. Never fake output.
   - **Optional:** a two-agent handoff, for example Disruption Analyst → Recovery Planner, or a Cyber Triage agent that drafts the incident.
+  - **As built:** five agents per run:
+    1. Disruption Analyst
+    2. Recovery Planner
+    3. Risk Auditor: an independent critic. If it challenges, the Planner revises or justifies once.
+    4. Cyber Triage (cyber incidents only)
+    5. Recovery Monitor: after approval it measures before/after and posts a verified outcome.
+  - Default model: `nvidia/nemotron-3-super-120b-a12b`; compare others with `npm --prefix worker run bench:models`.
 - **Model access:**
   - Endpoint: the OpenAI-compatible API on build.nvidia.com (`https://integrate.api.nvidia.com/v1`) or OpenRouter.
   - Model: choose a current Nemotron model that **supports tool/function calling**. Set it in the `NEMOTRON_MODEL` env var and confirm the ID on build.nvidia.com.
@@ -228,6 +235,10 @@ Design rules:
 - **Limits:**
   - Spend no more than 30 minutes on this. Confirm at the booth what counts as "Grok Bot automation."
   - **Describe tool usage accurately.** Claim Cursor as the core agent only if that is true, and disclose other AI tools honestly.
+- **As built:** the **Grok News Scout** bot (`worker/src/grok/scout.ts`) uses xAI's Responses API with server-side `web_search` + `x_search`.
+  - It runs on a schedule or on demand and records real-world signals in `news_signal` (shown as "N" markers on Silk Road).
+  - A person escalates a signal into a disruption, which wakes the Nemotron agents. The bot never changes network state itself.
+  - Still confirm at the booth that this counts as "Grok Bot automation".
 
 ## 4. Feature scope
 
@@ -413,3 +424,45 @@ Design rules:
 - **Tiger:** Tiger Cloud account and connection string; continuous aggregate syntax.
 - **SpaceXSI:** what qualifies as "Grok Bot automation."
 - **Beginner:** both members are first-timers, and whether it counts as the one HackUTD track.
+
+## 10. Decisions log (as built — keep current)
+
+**What each technology does (no overlap):**
+
+| Technology | Its one job in Arrow |
+|---|---|
+| **SpacetimeDB** (Maincloud) | The backend: all state, business logic, scoring, approvals, role checks, live sync. Two databases: `<name>-ops` and the isolated `<name>-ir`. |
+| **NVIDIA Nemotron** | All reasoning: the 5 event-driven agents *and* the "Ask Arrow" chat. Runs in the worker. |
+| **Grok** (free via Puter.js) | News research only: reads real Google News headlines (last 7 days) in the browser and flags those that threaten lanes. Never changes state; a person escalates a signal into a disruption. |
+| **Tiger Data** | History + analytics only: hypertables, `route_risk_5m` continuous aggregate, z-score anomaly SQL, Analytics charts. |
+| **Next.js** | The website (landing + command center) and two server routes: `/api/news` (Google News RSS) and `/api/analytics/*` (Tiger queries). |
+
+**Deployment (no local-only pieces):**
+- **SpacetimeDB Maincloud.** `spacetime login`, then `node scripts/setup.mjs --cloud <unique-name>`. That publishes both modules, writes `worker/.env` + `client/.env.local`, and authorises the agent identity. It runs on the team's Maincloud credits.
+  - **Live now (Nov 7):** ops = `arrowdblol-d492m`, IR = `arrowdblol-d492m-ir`, both on Maincloud under the `amirimtiaz` account. Re-run with `node scripts/setup.mjs --cloud arrowdblol-d492m --ops-db arrowdblol-d492m --ir-db arrowdblol-d492m-ir` (`--ops-db`/`--ir-db` reuse a database created on spacetimedb.com).
+- **Website on Vercel:**
+  - Root directory: `client`.
+  - Env: `NEXT_PUBLIC_SPACETIME_HOST=wss://maincloud.spacetimedb.com`, `NEXT_PUBLIC_OPS_DB`, `NEXT_PUBLIC_IR_DB`, `NEXT_PUBLIC_IR_HOST`, `TIGER_DATABASE_URL` (server-only).
+- **Worker:** any always-on host via `worker/Dockerfile` (or the demo laptop). It needs no inbound port.
+  - Env: `SPACETIME_HOST`, `SPACETIME_OPS_DB`, `AGENT_TOKEN` (contents of `worker/.agent-token-maincloud.spacetimedb.com`), `NVIDIA_API_KEY`, `NEMOTRON_MODEL`, `TIGER_DATABASE_URL`.
+- **Control Tower first admin:** after every fresh IR database, the owner (CLI identity) runs `node scripts/ir-bootstrap.mjs --server maincloud --db <name>-ir`. Then use "First-time setup" on `/app/control-tower`. Invite-only by design: without this step the Control Tower shows only the access screen.
+
+**Agents:**
+- 5 per run, in this order:
+  1. Disruption Analyst
+  2. Recovery Planner
+  3. Risk Auditor (critic; a challenge triggers one revise/justify round)
+  4. Cyber Triage (cyber only)
+  5. Recovery Monitor (after approval: measured before/after)
+- Model `nvidia/nemotron-3.5-super-vl-120b-a12b`, with `chat_template_kwargs.enable_thinking` on (`NEMOTRON_THINKING`) so reasoning shows as "Thinking" steps.
+- `npm --prefix worker run bench:models` compares models on the real first agent turn.
+
+**Gotchas:**
+- On Windows the `spacetime` shim may not resolve (PATH not reloaded, or a broken `bin/current` junction). Call `%LOCALAPPDATA%\SpacetimeDB\bin\<version>\spacetimedb-cli.exe` directly; the scripts already do.
+- `spacetime login` replaces the CLI identity. Databases published by the old identity can't be updated afterwards, so republish under new names or `--reset`.
+- A database created empty on the spacetimedb.com website skips the module's `init` on first publish (reducers then fail with "Arrow is not initialised"). Publish once with `--delete-data=always` so `init` runs.
+- `.env.example` files are committed to the public repo. Real keys go only in `worker/.env` and `client/.env.local` (gitignored).
+- Identity tokens are per server: the client keys them by host + database, and the worker keeps `.agent-token` (local) or `.agent-token-<host>`. A second demo user needs an incognito window.
+- Republishing a schema change while the worker runs makes it exit on decode errors. `npm start` runs it under `src/supervise.ts`, which restarts it, so after a schema change also regenerate bindings and restart.
+- Tiger's "client credentials" (public/secret key) are for Tiger's API/CLI, not the database. Use the service's connection string.
+- Grok/Puter needs a one-time Puter sign-in popup on the first **Scan** click; after that it auto-scans every 30 min while Silk Road is open.

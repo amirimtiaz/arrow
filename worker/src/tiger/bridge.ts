@@ -45,8 +45,7 @@ const ANOMALY_SQL = `
 
 export function startTigerBridge(ops: Ops) {
   const db = tiger();
-  const anomalies: Anomaly[] = [];
-  if (!db) return { anomalies, stop: () => undefined };
+  if (!db) return { stop: () => undefined };
 
   const startedAt = Date.now() * 1000;
   const telemetry: unknown[][] = [];
@@ -119,8 +118,6 @@ export function startTigerBridge(ops: Ops) {
           detectedAt: new Date().toISOString(),
           reported: false,
         };
-        anomalies.unshift(anomaly);
-        anomalies.splice(50);
 
         const kind = route.mode === 'sea' ? 'port_congestion' : route.mode === 'air' ? 'weather' : 'accident';
         await ops.reducers.reportDisruption({
@@ -134,6 +131,12 @@ export function startTigerBridge(ops: Ops) {
           source: 'anomaly',
         });
         anomaly.reported = true;
+        // Logged in Tiger so the website's Analytics page can show detections without reaching this worker.
+        await db.query(
+          `INSERT INTO anomaly_log (time, org_id, route_id, route_label, recent_risk, baseline_mean, baseline_sd, z, reported)
+           VALUES (now(), $1, $2, $3, $4, $5, $6, $7, $8)`,
+          [anomaly.orgId, anomaly.routeId, anomaly.routeLabel, anomaly.recentRisk, anomaly.baselineMean, anomaly.baselineSd, anomaly.z, anomaly.reported]
+        );
         console.log(`[tiger] anomaly on ${route.label} (z=${anomaly.z}) reported as a disruption`);
       }
     } catch (err) {
@@ -142,7 +145,6 @@ export function startTigerBridge(ops: Ops) {
   }, ANOMALY_MS);
 
   return {
-    anomalies,
     stop() {
       clearInterval(flush);
       clearInterval(detect);

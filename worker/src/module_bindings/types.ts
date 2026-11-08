@@ -114,6 +114,56 @@ export const LatLng = __t.object("LatLng", {
 });
 export type LatLng = __Infer<typeof LatLng>;
 
+export const NewsScan = __t.object("NewsScan", {
+  id: __t.u64(),
+  orgId: __t.u32(),
+  trigger: __t.string(),
+  requestedByName: __t.string(),
+  status: __t.string(),
+  model: __t.string(),
+  signalCount: __t.u32(),
+  searchCalls: __t.u32(),
+  error: __t.string(),
+  startedAt: __t.timestamp(),
+  finishedAt: __t.option(__t.timestamp()),
+});
+export type NewsScan = __Infer<typeof NewsScan>;
+
+export const NewsSignal = __t.object("NewsSignal", {
+  id: __t.u64(),
+  orgId: __t.u32(),
+  scanId: __t.u64(),
+  ts: __t.timestamp(),
+  headline: __t.string(),
+  summary: __t.string(),
+  region: __t.string(),
+  kind: __t.string(),
+  severity: __t.string(),
+  relevance: __t.f64(),
+  lat: __t.f64(),
+  lng: __t.f64(),
+  routeIds: __t.array(__t.u32()),
+  sourcesJson: __t.string(),
+  status: __t.string(),
+  disruptionId: __t.u64(),
+  decidedByName: __t.string(),
+});
+export type NewsSignal = __Infer<typeof NewsSignal>;
+
+export const NewsSignalInput = __t.object("NewsSignalInput", {
+  headline: __t.string(),
+  summary: __t.string(),
+  region: __t.string(),
+  kind: __t.string(),
+  severity: __t.string(),
+  relevance: __t.f64(),
+  lat: __t.f64(),
+  lng: __t.f64(),
+  routeIds: __t.array(__t.u32()),
+  sources: __t.array(__t.string()),
+});
+export type NewsSignalInput = __Infer<typeof NewsSignalInput>;
+
 export const Node = __t.object("Node", {
   id: __t.u32(),
   orgId: __t.u32(),

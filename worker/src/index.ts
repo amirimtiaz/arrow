@@ -1,22 +1,20 @@
 /**
  * Arrow worker (thin by design). It owns no state:
- *   - runs the Nemotron agents when disruption rows or Ask Arrow requests appear
- *   - mirrors telemetry to Tiger Data and runs anomaly detection
- *   - serves Tiger analytics over HTTP
- * Every state change goes through an arrow-ops reducer. It has no access to
- * the isolated incident-response database (arrow-ir).
+ *   - runs the Nemotron agents when disruption rows, approvals or Ask Arrow requests appear
+ *   - mirrors telemetry to Tiger Data and runs SQL anomaly detection
+ * It needs no inbound port (the website reads Tiger directly), so it can run
+ * on any machine. Every state change goes through an arrow-ops reducer. It has
+ * no access to the isolated incident-response database (arrow-ir).
  */
-import { handleAsk, handleDisruption } from './agent/runner';
+import { handleAsk, handleDisruption, handleExecuted } from './agent/runner';
 import { config, llmConfigured, tigerConfigured } from './config';
-import { startHttp } from './http';
-import type { AgentRun, Disruption } from './module_bindings/types';
+import type { ActionProposal, AgentRun, Disruption } from './module_bindings/types';
 import { connectOps, type Ops } from './spacetime';
-import { startTigerBridge, type Anomaly } from './tiger/bridge';
+import { startTigerBridge } from './tiger/bridge';
 import { tigerHealthy } from './tiger/db';
 import { createHistoryProvider } from './tiger/history';
 
 const RECENT_MS = 10 * 60_000;
-let anomalies: Anomaly[] = [];
 let tigerOk = false;
 
 /** Small concurrency-limited queue so a burst of events never floods the model. */
@@ -81,14 +79,23 @@ async function start() {
     enqueue(() => handleAsk(ops, r, history));
   };
 
+  // After a manager approves, the Recovery Monitor verifies the outcome.
+  const onExecuted = (before: ActionProposal, after: ActionProposal) => {
+    if (before.status !== 'pending' || after.status !== 'executed' || !after.requiresApproval || seen.has(`p${after.id}`)) return;
+    seen.add(`p${after.id}`);
+    enqueue(() => handleExecuted(ops, after, history, config.monitorDelayMs));
+  };
+
+
   ops.db.disruption.onInsert((_ctx, d) => onDisruption(d));
   ops.db.agentRun.onInsert((_ctx, r) => onAsk(r));
+  ops.db.actionProposal.onUpdate((_ctx, before, after) => onExecuted(before, after));
   for (const d of ops.db.disruption.iter()) onDisruption(d);
   for (const r of ops.db.agentRun.iter()) onAsk(r);
 
+
   if (tigerConfigured) {
     bridge = startTigerBridge(ops);
-    anomalies = bridge.anomalies;
     tigerOk = await tigerHealthy();
     timers.push(setInterval(async () => (tigerOk = await tigerHealthy()), 30_000));
   }
@@ -107,7 +114,7 @@ async function start() {
   await heartbeat();
   timers.push(setInterval(heartbeat, 10_000));
   console.log(
-    `[worker] ready · model ${config.nemotronModel} · LLM ${llmConfigured ? 'configured' : 'NOT configured'} · Tiger ${tigerConfigured ? 'configured' : 'not configured'}`
+    `[worker] ready · Nemotron ${llmConfigured ? `${config.nemotronModel} (thinking ${config.nemotronThinking ? 'on' : 'off'})` : 'NOT configured'} · Tiger ${tigerConfigured ? 'configured' : 'not configured'}`
   );
 }
 
@@ -132,8 +139,4 @@ function retryLater(err: unknown) {
   setTimeout(() => void start().catch(retryLater), 5000);
 }
 
-startHttp(
-  () => anomalies,
-  () => tigerOk
-);
 void start().catch(retryLater);

@@ -182,6 +182,8 @@ export function clearOrg(ctx: Ctx, orgId: number): void {
   deleteAll(ctx.db.telemetry.orgId.filter(orgId), (r) => ctx.db.telemetry.id.delete(r.id));
   deleteAll(ctx.db.securityEvent.orgId.filter(orgId), (r) => ctx.db.securityEvent.id.delete(r.id));
   deleteAll(ctx.db.scenarioPreset.orgId.filter(orgId), (r) => ctx.db.scenarioPreset.key.delete(r.key));
+  deleteAll(ctx.db.newsSignal.orgId.filter(orgId), (r) => ctx.db.newsSignal.id.delete(r.id));
+  deleteAll(ctx.db.newsScan.orgId.filter(orgId), (r) => ctx.db.newsScan.id.delete(r.id));
   ctx.db.org.id.delete(orgId);
 }
 
@@ -681,4 +683,68 @@ export function pruneOrg(ctx: Ctx, orgId: number): void {
   keepNewest([...ctx.db.telemetry.orgId.filter(orgId)], 1200, (r) => ctx.db.telemetry.id.delete(r.id));
   keepNewest([...ctx.db.securityEvent.orgId.filter(orgId)], 400, (r) => ctx.db.securityEvent.id.delete(r.id));
   keepNewest([...ctx.db.feedItem.orgId.filter(orgId)], 250, (r) => ctx.db.feedItem.id.delete(r.id));
+}
+
+// ─────────────────────────────── Grok News Scout ───────────────────────────────
+
+const MAX_SIGNALS_PER_ORG = 40;
+const MAX_SCANS_PER_ORG = 20;
+
+const byTime = (a: { microsSinceUnixEpoch: bigint }, b: { microsSinceUnixEpoch: bigint }) =>
+  a.microsSinceUnixEpoch < b.microsSinceUnixEpoch ? -1 : 1;
+
+export function pruneScans(ctx: Ctx, orgId: number): void {
+  const scans = [...ctx.db.newsScan.orgId.filter(orgId)].sort((a, b) => byTime(a.startedAt, b.startedAt));
+  for (const old of scans.slice(0, Math.max(0, scans.length - MAX_SCANS_PER_ORG))) ctx.db.newsScan.id.delete(old.id);
+}
+
+export function pruneSignals(ctx: Ctx, orgId: number): void {
+  const signals = [...ctx.db.newsSignal.orgId.filter(orgId)].sort((a, b) => byTime(a.ts, b.ts));
+  const removable = signals.filter((s) => s.status !== 'escalated');
+  for (const old of removable.slice(0, Math.max(0, signals.length - MAX_SIGNALS_PER_ORG))) ctx.db.newsSignal.id.delete(old.id);
+}
+
+const SIGNAL_TO_DISRUPTION: Record<string, DisruptionKind> = {
+  weather: 'weather',
+  port_congestion: 'port_congestion',
+  strike: 'strike',
+  blockage: 'blockage',
+  cyber: 'cyber',
+  geopolitical: 'geopolitical',
+  accident: 'accident',
+};
+
+/** A person escalates a Grok news signal into a disruption, which wakes the Nemotron agents. */
+export function escalateSignal(ctx: Ctx, signalId: bigint, by: string): DisruptionRow {
+  const signal = ctx.db.newsSignal.id.find(signalId);
+  if (!signal) throw new SenderError('Unknown news signal');
+  if (signal.status !== 'new') throw new SenderError('This signal was already handled');
+  const routes = signal.routeIds
+    .map((id) => ctx.db.route.id.find(id))
+    .filter((r): r is RouteRow => !!r && r.orgId === signal.orgId && (r.status === 'healthy' || r.status === 'at_risk'))
+    .slice(0, 3);
+  if (routes.length === 0) throw new SenderError('None of the lanes this signal mentions can be disrupted right now');
+
+  const severity: Severity = signal.severity === 'critical' ? 'high' : signal.severity === 'warning' ? 'moderate' : 'low';
+  const d = openDisruption(ctx, {
+    orgId: signal.orgId,
+    scenarioKey: `news-${signal.kind}`,
+    kind: SIGNAL_TO_DISRUPTION[signal.kind] ?? 'geopolitical',
+    title: clampText(`News: ${signal.headline}`, 160),
+    summary: clampText(
+      `${signal.summary} (Real-world signal found by the Grok News Scout and escalated by ${by}. Network data is simulated.)`,
+      600
+    ),
+    severity,
+    lat: signal.lat,
+    lng: signal.lng,
+    radiusKm: routes[0].mode === 'sea' ? 250 : 60,
+    routeIds: routes.map((r) => r.id),
+    atRiskRouteIds: [],
+    nodeIds: [],
+    durationHours: severity === 'high' ? 72 : severity === 'moderate' ? 36 : 12,
+    source: 'news',
+  });
+  ctx.db.newsSignal.id.update({ ...signal, status: 'escalated', disruptionId: d.id, decidedByName: by });
+  return d;
 }

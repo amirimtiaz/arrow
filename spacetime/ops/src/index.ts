@@ -7,17 +7,20 @@
  */
 import { ScheduleAt, SenderError, t } from 'spacetimedb/server';
 import { findScenario } from './scenarios';
-import spacetimedb, { tickTimer } from './schema';
+import spacetimedb, { NewsSignalInput, tickTimer } from './schema';
 import {
   actorName,
   clampText,
   clearOrg,
+  escalateSignal,
   evaluateDisruption,
   executeOption,
   isAgent,
   openDisruption,
   postFeed,
   pruneOrg,
+  pruneSignals,
+  pruneScans,
   requireAgent,
   requireManager,
   requireOrg,
@@ -308,6 +311,15 @@ export const claimAgentRun = spacetimedb.reducer({ runId: t.u64(), model: t.stri
   ctx.db.agentRun.id.update({ ...run, status: 'running', model: clampText(model, 120), activeAgent: 'Arrow Copilot' });
 });
 
+/** Re-opens a finished run so a follow-up agent (e.g. the Recovery Monitor) can work on it. */
+export const resumeAgentRun = spacetimedb.reducer({ runId: t.u64(), agent: t.string() }, (ctx, { runId, agent }) => {
+  requireAgent(ctx);
+  const run = ctx.db.agentRun.id.find(runId);
+  if (!run) throw new SenderError('Unknown run');
+  if (run.status === 'running' || run.status === 'queued') throw new SenderError('Run is already active');
+  ctx.db.agentRun.id.update({ ...run, status: 'running', activeAgent: clampText(agent, 60), finishedAt: undefined });
+});
+
 export const logAgentStep = spacetimedb.reducer(
   {
     runId: t.u64(),
@@ -373,6 +385,15 @@ export const proposeAction = spacetimedb.reducer(
     }
 
     const autoExecutes = args.kind === 'notify';
+    const needsApproval = !autoExecutes && args.kind !== 'ir_draft';
+    if (needsApproval) {
+      // A revised proposal (e.g. after the Risk Auditor challenged it) replaces the earlier one.
+      for (const old of [...ctx.db.actionProposal.runId.filter(args.runId)]) {
+        if (old.status === 'pending' && old.requiresApproval) {
+          ctx.db.actionProposal.id.update({ ...old, status: 'superseded', decisionNote: 'Revised by the agent before approval' });
+        }
+      }
+    }
     ctx.db.actionProposal.insert({
       id: 0n,
       runId: args.runId,
@@ -383,7 +404,7 @@ export const proposeAction = spacetimedb.reducer(
       title,
       rationale,
       payloadJson: clampText(args.payloadJson, 20000),
-      requiresApproval: !autoExecutes && args.kind !== 'ir_draft',
+      requiresApproval: needsApproval,
       status: autoExecutes ? 'executed' : 'pending',
       createdAt: ctx.timestamp,
       decidedByName: autoExecutes ? 'Auto (low risk)' : '',
@@ -545,3 +566,96 @@ export const acknowledgeIrDraft = spacetimedb.reducer(
     });
   }
 );
+
+// ─────────────────────────────── Grok News Scout ───────────────────────────────
+// Grok runs in the employee's browser (Puter.js, user-pays) over real headlines
+// fetched from Google News; the browser submits its findings here. Signals never
+// change the network: a person decides whether one becomes a disruption.
+
+const SIGNAL_SEVERITIES = ['watch', 'warning', 'critical'];
+const SIGNAL_KINDS = ['weather', 'port_congestion', 'strike', 'blockage', 'cyber', 'geopolitical', 'accident'];
+const MAX_SIGNALS_PER_SCAN = 6;
+
+export const submitNewsScan = spacetimedb.reducer(
+  {
+    orgId: t.u32(),
+    trigger: t.string(),
+    model: t.string(),
+    articleCount: t.u32(),
+    signals: t.array(NewsSignalInput),
+    error: t.string(),
+  },
+  (ctx, args) => {
+    const profile = requireUser(ctx);
+    if (profile.role === 'executive') throw new SenderError('Executives have a read-only view');
+    requireOrg(ctx, args.orgId);
+    if (args.signals.length > MAX_SIGNALS_PER_SCAN) throw new SenderError(`At most ${MAX_SIGNALS_PER_SCAN} signals per scan`);
+    const error = clampText(args.error, 500);
+
+    const scan = ctx.db.newsScan.insert({
+      id: 0n,
+      orgId: args.orgId,
+      trigger: args.trigger === 'auto' ? 'auto' : 'manual',
+      requestedByName: profile.name,
+      status: error ? 'failed' : 'completed',
+      model: clampText(args.model, 80),
+      signalCount: args.signals.length,
+      searchCalls: args.articleCount,
+      error,
+      startedAt: ctx.timestamp,
+      finishedAt: ctx.timestamp,
+    });
+
+    for (const s of args.signals) {
+      if (!SIGNAL_SEVERITIES.includes(s.severity)) throw new SenderError('Unknown severity');
+      const sources = s.sources.filter((u) => u.startsWith('https://') && u.length <= 600).slice(0, 5);
+      if (sources.length === 0) throw new SenderError('Every signal must cite at least one real article');
+      const headline = requireText(s.headline, 'Headline', 200);
+      const signal = ctx.db.newsSignal.insert({
+        id: 0n,
+        orgId: args.orgId,
+        scanId: scan.id,
+        ts: ctx.timestamp,
+        headline,
+        summary: clampText(s.summary, 800),
+        region: clampText(s.region, 80),
+        kind: SIGNAL_KINDS.includes(s.kind) ? s.kind : 'geopolitical',
+        severity: s.severity,
+        relevance: Math.min(1, Math.max(0, s.relevance)),
+        lat: Math.min(90, Math.max(-90, s.lat)),
+        lng: Math.min(180, Math.max(-180, s.lng)),
+        routeIds: s.routeIds.filter((id) => ctx.db.route.id.find(id)?.orgId === args.orgId).slice(0, 6),
+        sourcesJson: JSON.stringify(sources),
+        status: 'new',
+        disruptionId: 0n,
+        decidedByName: '',
+      });
+      if (s.severity !== 'watch') {
+        const text = `Live news (Grok): ${headline}. ${clampText(s.summary, 220)}`;
+        postFeed(ctx, args.orgId, s.severity === 'critical' ? 'warning' : 'info', 'news', text, {
+          author: 'Grok News Scout',
+          link: `signal:${signal.id}`,
+        });
+      }
+    }
+    pruneSignals(ctx, args.orgId);
+    pruneScans(ctx, args.orgId);
+  }
+);
+
+/** Human-in-the-loop: turn a real-world signal into a disruption on the network (wakes the agents). */
+export const escalateNewsSignal = spacetimedb.reducer({ signalId: t.u64() }, (ctx, { signalId }) => {
+  const profile = requireUser(ctx);
+  if (profile.role === 'executive') throw new SenderError('Executives have a read-only view');
+  const d = escalateSignal(ctx, signalId, profile.name);
+  const text = `${profile.name} escalated a Grok news signal into a disruption. The agents will investigate automatically.`;
+  postFeed(ctx, d.orgId, 'info', 'news', text, { author: profile.name, link: `disruption:${d.id}` });
+});
+
+export const dismissNewsSignal = spacetimedb.reducer({ signalId: t.u64() }, (ctx, { signalId }) => {
+  const profile = requireUser(ctx);
+  const signal = ctx.db.newsSignal.id.find(signalId);
+  if (!signal) throw new SenderError('Unknown news signal');
+  if (signal.status !== 'new') throw new SenderError('This signal was already handled');
+  ctx.db.newsSignal.id.update({ ...signal, status: 'dismissed', decidedByName: profile.name });
+});

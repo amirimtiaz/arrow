@@ -16,6 +16,7 @@ const MOCK_PORT = 8799;
 process.env.NEMOTRON_BASE_URL = `http://127.0.0.1:${MOCK_PORT}/v1`;
 process.env.NVIDIA_API_KEY = 'test-only-key';
 process.env.TIGER_DATABASE_URL = '';
+process.env.TIGER_HOST = '';
 
 import { mock, startMockLlm } from './mock-llm';
 
@@ -23,7 +24,7 @@ await startMockLlm(MOCK_PORT);
 
 // ─────────────────────────── Live SpacetimeDB flow ───────────────────────────
 const { connectOps, waitFor } = await import('../src/spacetime');
-const { handleAsk, handleDisruption } = await import('../src/agent/runner');
+const { handleAsk, handleDisruption, handleExecuted } = await import('../src/agent/runner');
 const { createHistoryProvider } = await import('../src/tiger/history');
 const { DbConnection } = await import('../src/module_bindings');
 
@@ -67,15 +68,36 @@ for (const [scenarioKey, expectedStrategy] of Object.entries(EXPECTED)) {
   assert.equal(run.status, 'awaiting_approval', `${scenarioKey}: run should await approval (got ${run.status}: ${run.error})`);
   for (const k of ['plan', 'tool_call', 'handoff', 'decision']) assert.ok(kinds.has(k), `${scenarioKey}: missing ${k} step`);
 
-  const proposal = [...agent.db.actionProposal.iter()].find((p) => p.runId === run.id && p.requiresApproval)!;
+  const proposal = [...agent.db.actionProposal.iter()].find((p) => p.runId === run.id && p.requiresApproval && p.status === 'pending')!;
   const option = agent.db.routeOption.id.find(proposal.optionId)!;
   assert.equal(option.strategy, expectedStrategy, `${scenarioKey}: proposed ${option.strategy}`);
+
+  // Proposer/critic: the Risk Auditor always reviews; the Suez split is challenged and defended.
+  const review = steps.find((s) => s.agent === 'Risk Auditor' && s.tool === 'review_proposal');
+  assert.ok(review, `${scenarioKey}: Risk Auditor should review the proposal`);
+  if (scenarioKey === 'amz-suez-blockage') {
+    assert.ok(
+      steps.some((s) => s.tool === 'keep_proposal'),
+      'challenged proposal should be revised or justified'
+    );
+  }
 
   await manager.reducers.approveAction({ proposalId: proposal.id, note: 'e2e test' });
   await new Promise((r) => setTimeout(r, 300));
   const rerouted = [...agent.db.route.iter()].filter((r) => r.orgId === 1 && r.status === 'rerouted');
   assert.ok(rerouted.length > 0, `${scenarioKey}: approval should activate rerouted lanes`);
   assert.equal(agent.db.disruption.id.find(d.id)!.status, 'mitigating');
+
+  // Recovery Monitor verifies the executed action and closes the loop.
+  await handleExecuted(agent, agent.db.actionProposal.id.find(proposal.id)!, history, 2500);
+  const monitored = agent.db.agentRun.id.find(run.id)!;
+  const monitorSteps = [...agent.db.agentStep.iter()].filter((s) => s.runId === run.id && s.agent === 'Recovery Monitor');
+  assert.ok(
+    monitorSteps.some((s) => s.tool === 'measure_recovery'),
+    `${scenarioKey}: monitor should measure recovery`
+  );
+  assert.equal(monitored.status, 'completed');
+  assert.ok(monitored.summary.includes('Verified'), `${scenarioKey}: run summary should include the verified outcome`);
 
   if (scenarioKey === 'amz-ransomware-3pl') {
     const draft = [...agent.db.actionProposal.iter()].find((p) => p.runId === run.id && p.kind === 'ir_draft');
@@ -102,7 +124,39 @@ assert.equal(answered.status, 'completed');
 assert.ok(answered.answer.includes('active disruptions'), 'ask should return an answer built from tool output');
 console.log(`✓ Ask Arrow answered: ${answered.answer}`);
 
-await manager.reducers.resetOrg({ orgId: 1 });
-console.log('\n✓ Agent plumbing end-to-end test passed (workspace reset).');
-mock.close();
-process.exit(0);
+// Grok News Scout: the browser submits findings (Puter.js); a person escalates one into a disruption.
+const lane = [...agent.db.route.iter()].find((r) => r.orgId === 1 && r.status === 'healthy')!;
+await manager.reducers.submitNewsScan({
+  orgId: 1,
+  trigger: 'manual',
+  model: 'x-ai/grok-4.7 (test)',
+  articleCount: 12,
+  error: '',
+  signals: [
+    {
+      headline: 'Test signal: congestion building on a monitored lane',
+      summary: 'Scripted signal used only by the plumbing test.',
+      region: 'Test region',
+      kind: 'port_congestion',
+      severity: 'warning',
+      relevance: 0.8,
+      lat: 22.5,
+      lng: 114.2,
+      routeIds: [lane.id],
+      sources: ['https://example.com/test-article'],
+    },
+  ],
+});
+const signal = await waitFor(agent.db.newsSignal, () => [...agent.db.newsSignal.iter()].find((s) => s.orgId === 1 && s.status === 'new'));
+await assert.rejects(
+  manager.reducers.submitNewsScan({ orgId: 1, trigger: 'manual', model: 'x', articleCount: 0, error: '', signals: [{ ...signal, sources: [], routeIds: [] } as never] }),
+  'signals without a cited article must be rejected'
+);
+await manager.reducers.escalateNewsSignal({ signalId: signal.id });
+await new Promise((r) => setTimeout(r, 300));
+const newsDisruption = [...agent.db.disruption.iter()].find((x) => x.source === 'news' && x.status === 'active');
+assert.ok(newsDisruption, 'escalating a signal should open a news-sourced disruption');
+await manager.reducers.resolveDisruption({ disruptionId: newsDisruption.id });
+console.log('✓ Grok News Scout: submitted signal escalated into a disruption; uncited signals rejected');
+
+

@@ -47,6 +47,37 @@ function script(messages: Msg[]) {
     const s = lastToolResult(messages, 'list_affected_shipments');
     return { tool_calls: [call('handoff_to_planner', { findings: `${s.shipments} shipments worth $${s.value_usd} are affected.` })] };
   }
+  if (system.startsWith('You are the Risk Auditor')) {
+    if (!called.has('get_current_proposal')) return { tool_calls: [call('get_current_proposal', {}), call('get_route_options', {})] };
+    const proposal = lastToolResult(messages, 'get_current_proposal');
+    // Challenge the Suez split once to exercise the proposer/critic round; concur otherwise.
+    const challenge = String(proposal?.title ?? '').startsWith('Fly high-priority');
+    return {
+      tool_calls: [
+        call('review_proposal', {
+          verdict: challenge ? 'challenge' : 'concur',
+          assessment: challenge ? 'Air capacity during a canal closure may be constrained.' : 'The proposal is the best-scored option.',
+          concerns: challenge ? ['Confirm air capacity for the urgent volume.'] : [],
+        }),
+      ],
+    };
+  }
+  if (system.startsWith('You are the Recovery Planner') && system.includes('Risk Auditor challenged')) {
+    return { tool_calls: [call('keep_proposal', { justification: 'It still has the lowest expected impact of all scored options.' })] };
+  }
+  if (system.startsWith('You are the Recovery Monitor')) {
+    if (!called.has('measure_recovery')) return { tool_calls: [call('measure_recovery', {})] };
+    const m = lastToolResult(messages, 'measure_recovery');
+    if (!called.has('post_briefing')) {
+      const onTime = m.metrics[0];
+      return {
+        tool_calls: [
+          call('post_briefing', { text: `Verified: on-time moved from ${onTime.at_approval}% to ${onTime.now}% after approval.` }),
+        ],
+      };
+    }
+    return { tool_calls: [call('finish_run', { summary: 'Outcome verified against live telemetry.' })] };
+  }
   if (system.startsWith('You are the Recovery Planner')) {
     if (!called.has('submit_plan'))
       return {

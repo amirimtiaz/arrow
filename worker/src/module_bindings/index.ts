@@ -39,7 +39,9 @@ import AgentHeartbeatReducer from "./agent_heartbeat_reducer";
 import ApproveActionReducer from "./approve_action_reducer";
 import AskArrowReducer from "./ask_arrow_reducer";
 import ClaimAgentRunReducer from "./claim_agent_run_reducer";
+import DismissNewsSignalReducer from "./dismiss_news_signal_reducer";
 import EscalateFeedItemReducer from "./escalate_feed_item_reducer";
+import EscalateNewsSignalReducer from "./escalate_news_signal_reducer";
 import EvaluateAlternativesReducer from "./evaluate_alternatives_reducer";
 import FinishAgentRunReducer from "./finish_agent_run_reducer";
 import JoinWorkspaceReducer from "./join_workspace_reducer";
@@ -50,10 +52,12 @@ import RejectActionReducer from "./reject_action_reducer";
 import ReportDisruptionReducer from "./report_disruption_reducer";
 import ResetOrgReducer from "./reset_org_reducer";
 import ResolveDisruptionReducer from "./resolve_disruption_reducer";
+import ResumeAgentRunReducer from "./resume_agent_run_reducer";
 import SetAgentIdentityReducer from "./set_agent_identity_reducer";
 import SetSimPausedReducer from "./set_sim_paused_reducer";
 import SimulateCongestionReducer from "./simulate_congestion_reducer";
 import StartAgentRunReducer from "./start_agent_run_reducer";
+import SubmitNewsScanReducer from "./submit_news_scan_reducer";
 import SwitchOrgReducer from "./switch_org_reducer";
 import TriggerRandomScenarioReducer from "./trigger_random_scenario_reducer";
 import TriggerScenarioReducer from "./trigger_scenario_reducer";
@@ -67,6 +71,8 @@ import AgentServiceRow from "./agent_service_table";
 import AgentStepRow from "./agent_step_table";
 import DisruptionRow from "./disruption_table";
 import FeedItemRow from "./feed_item_table";
+import NewsScanRow from "./news_scan_table";
+import NewsSignalRow from "./news_signal_table";
 import NodeRow from "./node_table";
 import OpsStateRow from "./ops_state_table";
 import OrgRow from "./org_table";
@@ -165,6 +171,34 @@ const tablesSchema = __schema({
       { name: 'feed_item_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, FeedItemRow),
+  newsScan: __table({
+    name: 'news_scan',
+    indexes: [
+      { accessor: 'id', name: 'news_scan_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'orgId', name: 'news_scan_org_id_idx_btree', algorithm: 'btree', columns: [
+        'orgId',
+      ] },
+    ],
+    constraints: [
+      { name: 'news_scan_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, NewsScanRow),
+  newsSignal: __table({
+    name: 'news_signal',
+    indexes: [
+      { accessor: 'id', name: 'news_signal_id_idx_btree', algorithm: 'btree', columns: [
+        'id',
+      ] },
+      { accessor: 'orgId', name: 'news_signal_org_id_idx_btree', algorithm: 'btree', columns: [
+        'orgId',
+      ] },
+    ],
+    constraints: [
+      { name: 'news_signal_id_key', constraint: 'unique', columns: ['id'] },
+    ],
+  }, NewsSignalRow),
   node: __table({
     name: 'node',
     indexes: [
@@ -340,7 +374,9 @@ const reducersSchema = __reducers(
   __reducerSchema("approve_action", ApproveActionReducer),
   __reducerSchema("ask_arrow", AskArrowReducer),
   __reducerSchema("claim_agent_run", ClaimAgentRunReducer),
+  __reducerSchema("dismiss_news_signal", DismissNewsSignalReducer),
   __reducerSchema("escalate_feed_item", EscalateFeedItemReducer),
+  __reducerSchema("escalate_news_signal", EscalateNewsSignalReducer),
   __reducerSchema("evaluate_alternatives", EvaluateAlternativesReducer),
   __reducerSchema("finish_agent_run", FinishAgentRunReducer),
   __reducerSchema("join_workspace", JoinWorkspaceReducer),
@@ -351,10 +387,12 @@ const reducersSchema = __reducers(
   __reducerSchema("report_disruption", ReportDisruptionReducer),
   __reducerSchema("reset_org", ResetOrgReducer),
   __reducerSchema("resolve_disruption", ResolveDisruptionReducer),
+  __reducerSchema("resume_agent_run", ResumeAgentRunReducer),
   __reducerSchema("set_agent_identity", SetAgentIdentityReducer),
   __reducerSchema("set_sim_paused", SetSimPausedReducer),
   __reducerSchema("simulate_congestion", SimulateCongestionReducer),
   __reducerSchema("start_agent_run", StartAgentRunReducer),
+  __reducerSchema("submit_news_scan", SubmitNewsScanReducer),
   __reducerSchema("switch_org", SwitchOrgReducer),
   __reducerSchema("trigger_random_scenario", TriggerRandomScenarioReducer),
   __reducerSchema("trigger_scenario", TriggerScenarioReducer),

@@ -10,9 +10,18 @@ import { DbConnection } from './module_bindings';
 
 export type Ops = DbConnection;
 
-const tokenPath = path.resolve(process.cwd(), config.tokenFile);
+/** Tokens are only valid on the server that issued them, so each host gets its own file. */
+function defaultTokenFile(): string {
+  const host = new URL(config.spacetimeHost.replace(/^ws/, 'http')).hostname;
+  return host === '127.0.0.1' || host === 'localhost' ? '.agent-token' : `.agent-token-${host}`;
+}
+
+const tokenPath = path.resolve(process.cwd(), config.tokenFile || defaultTokenFile());
 
 function readToken(): string | undefined {
+  // Cloud hosts have no persistent disk: AGENT_TOKEN carries the authorised identity instead.
+  const fromEnv = (process.env.AGENT_TOKEN ?? '').trim();
+  if (fromEnv) return fromEnv;
   try {
     return fs.readFileSync(tokenPath, 'utf8').trim() || undefined;
   } catch {

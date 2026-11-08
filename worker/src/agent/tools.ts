@@ -12,6 +12,8 @@ export interface RunNotes {
   proposalTitle?: string;
   irDrafted?: boolean;
   summary?: string;
+  audit?: { verdict: 'concur' | 'challenge'; assessment: string; concerns: string[] };
+  kept?: boolean;
 }
 
 export interface ToolContext {
@@ -21,6 +23,8 @@ export interface ToolContext {
   disruptionId: bigint;
   history: HistoryProvider;
   notes: RunNotes;
+  /** Set for the Recovery Monitor: the approved proposal it verifies. */
+  proposalId?: bigint;
 }
 
 export interface ToolResult {
@@ -598,7 +602,121 @@ export const listShipments = tool({
   },
 });
 
+// ─────────────────────────────── Risk Auditor (critic) ───────────────────────────────
+
+function pendingProposal(ctx: ToolContext) {
+  return [...ctx.ops.db.actionProposal.iter()].find((p) => p.runId === ctx.runId && p.status === 'pending' && p.requiresApproval);
+}
+
+export const getCurrentProposal = tool({
+  name: 'get_current_proposal',
+  description: "Read the Recovery Planner's pending proposal (title, rationale) together with the computed metrics of the option it chose.",
+  schema: z.object({}),
+  run: (_args, ctx) => {
+    const p = pendingProposal(ctx);
+    if (!p) throw new Error('There is no pending proposal for this run');
+    const chosen = optionsFor(ctx, ctx.disruptionId).find((o) => ctx.ops.db.routeOption.id.find(p.optionId)?.key === o.option_key);
+    return {
+      result: { title: p.title, rationale: p.rationale, kind: p.kind, chosen_option: chosen ?? null },
+      summary: `Reviewing "${p.title}"`,
+    };
+  },
+});
+
+export const reviewProposal = tool({
+  name: 'review_proposal',
+  description:
+    'Record your independent review of the proposal. Concur if it is the best supported option; challenge only with a concrete, number-backed concern from the tool outputs.',
+  schema: z.object({
+    verdict: z.enum(['concur', 'challenge']),
+    assessment: z.string().min(10).max(800).describe('One short paragraph citing tool numbers'),
+    concerns: z.array(z.string().min(5).max(300)).max(4).describe('Specific concerns (empty when concurring)'),
+  }),
+  terminal: true,
+  run: (args, ctx) => {
+    ctx.notes.audit = args;
+    return {
+      result: { recorded: true, verdict: args.verdict },
+      summary:
+        args.verdict === 'concur' ? 'Auditor concurs with the proposal' : `Auditor challenges: ${args.concerns[0] ?? args.assessment}`,
+    };
+  },
+});
+
+export const keepProposal = tool({
+  name: 'keep_proposal',
+  description: 'Keep the current proposal after considering the Risk Auditor concerns, with a short justification.',
+  schema: z.object({ justification: z.string().min(10).max(800) }),
+  terminal: true,
+  run: ({ justification }, ctx) => {
+    ctx.notes.kept = true;
+    return { result: { kept: true, justification }, summary: 'Kept the proposal after the audit' };
+  },
+});
+
+// ─────────────────────────────── Recovery Monitor ───────────────────────────────
+
+export const measureRecovery = tool({
+  name: 'measure_recovery',
+  description:
+    'Measure the effect of the approved action: on-time %, value at risk and risk index at approval vs now, plus how many re-planned shipments are moving, held or still delayed.',
+  schema: z.object({}),
+  run: (_args, ctx) => {
+    const p = ctx.proposalId !== undefined ? ctx.ops.db.actionProposal.id.find(ctx.proposalId) : undefined;
+    if (!p || !p.decidedAt) throw new Error('No approved proposal to measure');
+    const decidedAt = p.decidedAt.microsSinceUnixEpoch;
+    const samples = [...ctx.ops.db.riskSample.iter()]
+      .filter((s) => s.orgId === ctx.orgId)
+      .sort((a, b) => (a.ts.microsSinceUnixEpoch < b.ts.microsSinceUnixEpoch ? -1 : 1));
+    const before = [...samples].reverse().find((s) => s.ts.microsSinceUnixEpoch <= decidedAt) ?? samples[0];
+    const after = samples.at(-1);
+    if (!before || !after) throw new Error('Not enough telemetry yet');
+
+    const d = ctx.ops.db.disruption.id.find(ctx.disruptionId);
+    const affected = new Set(d?.affectedRouteIds ?? []);
+    const shipments = [...ctx.ops.db.shipment.iter()].filter(
+      (s) => s.orgId === ctx.orgId && (affected.has(s.routeId) || affected.has(s.originRouteId))
+    );
+    const count = (status: string) => shipments.filter((s) => s.status === status).length;
+    const lanes = [...ctx.ops.db.route.iter()].filter((r) => r.orgId === ctx.orgId);
+    const metric = (label: string, b: number, a: number, betterWhenLower = false) => ({
+      metric: label,
+      at_approval: round(b),
+      now: round(a),
+      change: round(a - b),
+      improved: betterWhenLower ? a < b : a > b,
+    });
+
+    const result = {
+      seconds_since_approval: Math.round(Number((after.ts.microsSinceUnixEpoch - decidedAt) / 1_000_000n)),
+      metrics: [
+        metric('on_time_pct', before.onTimePct, after.onTimePct),
+        metric('value_at_risk_usd', before.valueAtRiskUsd, after.valueAtRiskUsd, true),
+        metric('risk_index', before.riskIndex, after.riskIndex, true),
+      ],
+      affected_shipments: {
+        total: shipments.length,
+        rerouted_moving: count('rerouted'),
+        held: count('held'),
+        still_delayed: count('delayed'),
+      },
+      lanes: {
+        rerouted: lanes.filter((r) => r.status === 'rerouted').length,
+        disrupted: lanes.filter((r) => r.status === 'disrupted').length,
+      },
+    };
+    const onTime = result.metrics[0];
+    return {
+      result,
+      summary: `On-time ${onTime.at_approval}% → ${onTime.now}% · ${result.affected_shipments.rerouted_moving} re-planned shipments moving, ${result.affected_shipments.held} held`,
+    };
+  },
+});
+
 export const ANALYST_TOOLS = [submitPlan, getDisruption, listAffectedShipments, queryRouteHistory, checkVendorRisk, handoffToPlanner];
 export const PLANNER_TOOLS = [submitPlan, evaluateRouteAlternatives, getRouteOptions, proposeAction, postBriefing, finishRun];
+export const AUDITOR_TOOLS = [getCurrentProposal, getRouteOptions, reviewProposal];
+export const REVISION_TOOLS = [getRouteOptions, proposeAction, keepProposal];
+export const MONITOR_TOOLS = [measureRecovery, postBriefing, finishRun];
 export const CYBER_TOOLS = [getDisruption, getIrHints, draftIrIncident];
 export const ASK_TOOLS = [submitPlan, getNetworkOverview, listRoutes, listShipments, queryRouteHistory, checkVendorRisk, postBriefing];

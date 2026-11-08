@@ -43,14 +43,18 @@ function splitThinking(text: string): { content: string; reasoning: string } {
 
 export async function chat(messages: Message[], tools: ToolSpec[]): Promise<LlmTurn> {
   const started = Date.now();
-  const response = await llm().chat.completions.create({
+  // chat_template_kwargs is an NVIDIA extension (not in the OpenAI types): it toggles Nemotron's reasoning trace.
+  const body = {
     model: config.nemotronModel,
     messages,
     tools: tools.length > 0 ? tools : undefined,
-    tool_choice: tools.length > 0 ? 'auto' : undefined,
-    temperature: 0.2,
-    max_tokens: 2048,
-  });
+    tool_choice: tools.length > 0 ? ('auto' as const) : undefined,
+    parallel_tool_calls: tools.length > 0 ? true : undefined,
+    temperature: 0.3,
+    max_tokens: config.nemotronThinking ? 8192 : 2048,
+    chat_template_kwargs: { enable_thinking: config.nemotronThinking },
+  };
+  const response = await llm().chat.completions.create(body);
   const choice = response.choices[0];
   if (!choice) throw new Error('Nemotron returned no choices');
   const message = choice.message as typeof choice.message & { reasoning_content?: string | null };

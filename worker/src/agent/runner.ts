@@ -3,7 +3,10 @@
  *
  *   disruption row appears → Disruption Analyst (plan → tools → findings)
  *     → handoff → Recovery Planner (score options → propose → brief)
+ *     → handoff → Risk Auditor (independent critique: concur or challenge)
+ *         ↳ if challenged → Recovery Planner revises or justifies (one round)
  *     → (cyber only) handoff → Cyber Triage (IR draft for the Control Tower)
+ *   manager approves → action executes → Recovery Monitor (measure → verified briefing)
  *
  * Every plan, tool call (arguments, result, latency), handoff and error is
  * written to SpacetimeDB via log_agent_step so the UI streams the trace.
@@ -12,14 +15,24 @@
  */
 import { z } from 'zod';
 import { config, llmConfigured } from '../config';
-import type { AgentRun, Disruption } from '../module_bindings/types';
+import type { ActionProposal, AgentRun, Disruption } from '../module_bindings/types';
 import { waitFor, type Ops } from '../spacetime';
 import type { HistoryProvider } from '../tiger/history';
 import { chat, type Message, type ToolSpec } from './llm';
-import { analystPrompt, askPrompt, cyberPrompt, plannerPrompt } from './prompts';
-import { ANALYST_TOOLS, ASK_TOOLS, CYBER_TOOLS, PLANNER_TOOLS, type ToolContext, type ToolDef } from './tools';
+import { analystPrompt, askPrompt, auditorPrompt, cyberPrompt, monitorPrompt, plannerPrompt, revisionPrompt } from './prompts';
+import {
+  ANALYST_TOOLS,
+  ASK_TOOLS,
+  AUDITOR_TOOLS,
+  CYBER_TOOLS,
+  MONITOR_TOOLS,
+  PLANNER_TOOLS,
+  REVISION_TOOLS,
+  type ToolContext,
+  type ToolDef,
+} from './tools';
 
-const TURN_LIMITS = { analyst: 6, planner: 6, cyber: 3, ask: 6 };
+const TURN_LIMITS = { analyst: 6, planner: 6, auditor: 3, revision: 3, cyber: 3, monitor: 4, ask: 6 };
 
 type StepKind = 'plan' | 'tool_call' | 'observation' | 'decision' | 'handoff' | 'message' | 'error';
 
@@ -237,6 +250,8 @@ export async function handleDisruption(ops: Ops, d: Disruption, history: History
       log
     );
 
+    if (ctx.notes.proposalTitle) await auditProposal(ctx, log, org);
+
     if (d.kind === 'cyber') {
       await log('handoff', {
         agent: 'Recovery Planner',
@@ -256,6 +271,84 @@ export async function handleDisruption(ops: Ops, d: Disruption, history: History
       (ctx.notes.proposalTitle ? `Proposed for approval: ${ctx.notes.proposalTitle}.` : 'Investigation complete; no action was proposed.');
     await ops.reducers.finishAgentRun({ runId: run.id, status: 'completed', summary, answer: '', error: '' });
     console.log(`[agent] run #${run.id} completed`);
+  } catch (err) {
+    await failRun(ops, run, log, err);
+  }
+}
+
+type OrgInfo = ReturnType<typeof orgInfo>;
+
+/** Proposer/critic round: the Risk Auditor reviews; a challenge gets one revision from the planner. */
+async function auditProposal(ctx: ToolContext, log: Logger, org: OrgInfo): Promise<void> {
+  await log('handoff', {
+    agent: 'Recovery Planner',
+    title: 'Recovery Planner → Risk Auditor',
+    output: { summary: `Independent review of "${ctx.notes.proposalTitle}" before it reaches a manager.` },
+  });
+  await runAgent(
+    { name: 'Risk Auditor', system: auditorPrompt(org), tools: AUDITOR_TOOLS, maxTurns: TURN_LIMITS.auditor },
+    `Review the pending proposal for disruption #${ctx.disruptionId}: "${ctx.notes.proposalTitle}".`,
+    ctx,
+    log
+  );
+  const audit = ctx.notes.audit;
+  if (audit?.verdict !== 'challenge') return;
+
+  await log('handoff', {
+    agent: 'Risk Auditor',
+    title: 'Risk Auditor → Recovery Planner (revise or justify)',
+    output: { summary: `${audit.assessment}\n${audit.concerns.map((c) => `- ${c}`).join('\n')}` },
+  });
+  await runAgent(
+    { name: 'Recovery Planner', system: revisionPrompt(org), tools: REVISION_TOOLS, maxTurns: TURN_LIMITS.revision },
+    `The Risk Auditor challenged your proposal "${ctx.notes.proposalTitle}".\nAssessment: ${audit.assessment}\nConcerns:\n${audit.concerns
+      .map((c) => `- ${c}`)
+      .join('\n')}\nDisruption id: ${ctx.disruptionId}.`,
+    ctx,
+    log
+  );
+}
+
+/**
+ * After a manager approves and the action executes, the Recovery Monitor
+ * measures whether it worked and posts a verified outcome (closing the loop).
+ */
+export async function handleExecuted(ops: Ops, proposal: ActionProposal, history: HistoryProvider, delayMs: number): Promise<void> {
+  if (!llmConfigured) return;
+  await new Promise((resolve) => setTimeout(resolve, delayMs));
+  const run = ops.db.agentRun.id.find(proposal.runId);
+  if (!run) return;
+  try {
+    await ops.reducers.resumeAgentRun({ runId: run.id, agent: 'Recovery Monitor' });
+  } catch (err) {
+    console.log(`[agent] monitor skipped for run #${run.id}: ${(err as Error).message}`);
+    return;
+  }
+  const log = makeLogger(ops, run.id);
+  const ctx: ToolContext = {
+    ops,
+    runId: run.id,
+    orgId: run.orgId,
+    disruptionId: run.disruptionId,
+    history,
+    notes: {},
+    proposalId: proposal.id,
+  };
+  try {
+    const org = orgInfo(ops, run.orgId);
+    await log('handoff', {
+      agent: 'Recovery Monitor',
+      title: `Approved by ${proposal.decidedByName} → Recovery Monitor`,
+      output: { summary: `Verifying the outcome of "${proposal.title}".` },
+    });
+    await runAgent(
+      { name: 'Recovery Monitor', system: monitorPrompt(org), tools: MONITOR_TOOLS, maxTurns: TURN_LIMITS.monitor },
+      `"${proposal.title}" was approved by ${proposal.decidedByName} and executed. Verify the outcome now.`,
+      ctx,
+      log
+    );
+    const summary = [run.summary, ctx.notes.summary ? `Verified: ${ctx.notes.summary}` : ''].filter(Boolean).join(' ');
+    await ops.reducers.finishAgentRun({ runId: run.id, status: 'completed', summary, answer: '', error: '' });
   } catch (err) {
     await failRun(ops, run, log, err);
   }

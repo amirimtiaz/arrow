@@ -57,3 +57,17 @@ SELECT add_continuous_aggregate_policy('route_risk_5m',
   end_offset        => INTERVAL '5 minutes',
   schedule_interval => INTERVAL '1 minute',
   if_not_exists     => TRUE);
+
+-- Anomalies detected by the worker's z-score SQL (shown on the Analytics page).
+CREATE TABLE IF NOT EXISTS anomaly_log (
+  time          timestamptz      NOT NULL,
+  org_id        integer          NOT NULL,
+  route_id      integer          NOT NULL,
+  route_label   text             NOT NULL,
+  recent_risk   double precision NOT NULL,
+  baseline_mean double precision NOT NULL,
+  baseline_sd   double precision NOT NULL,
+  z             double precision NOT NULL,
+  reported      boolean          NOT NULL
+);
+SELECT create_hypertable('anomaly_log', by_range('time'), if_not_exists => TRUE);

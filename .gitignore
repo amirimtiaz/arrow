@@ -10,7 +10,7 @@ next-env.d.ts
 .env
 .env.*
 !.env.example
-worker/.agent-token
+worker/.agent-token*
 *.token
 
 # Local tooling
