@@ -12,7 +12,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     <ToastProvider>
       <OpsProvider>
         <TopBarSlotsProvider>
-          <div className="flex h-screen flex-col overflow-hidden bg-bg">
+          <div data-arrow-stage className="flex h-screen flex-col overflow-hidden bg-bg">
             <TopBar />
             <main className="min-h-0 flex-1 overflow-hidden">{children}</main>
           </div>

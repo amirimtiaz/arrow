@@ -9,6 +9,7 @@ import { PLAN_STYLE } from '@/lib/ops/status';
 import { useTheme } from '@/lib/theme';
 import { errorMessage, useToast } from '@/components/ui/toast';
 import { Dropdown } from '@/components/ui/primitives';
+import { ArrowShotLink } from '@/components/transition/arrow-transition';
 import { ArrowMark } from './ArrowMark';
 import { TopBarActionsTarget, TopBarTitleTarget } from './TopBarSlots';
 
@@ -29,10 +30,16 @@ export function TopBar() {
   const pathname = usePathname();
   return (
     <header className="relative z-40 flex h-14 shrink-0 items-center gap-2.5 border-b border-line bg-elevated px-4 [&>*]:shrink-0">
-      <Link href="/" className="flex items-center gap-2 pr-1 text-accent" aria-label="Arrow home">
+      <ArrowShotLink
+        href="/"
+        direction="back"
+        caption="Back to Arrow"
+        className="flex items-center gap-2 pr-1 text-accent"
+        aria-label="Arrow home"
+      >
         <ArrowMark className="size-7" />
         <span className="text-lg font-extrabold tracking-tight text-fg">Arrow</span>
-      </Link>
+      </ArrowShotLink>
 
       <nav className="flex items-center gap-1.5" aria-label="Main">
         {NAV.map(({ href, label, icon: Icon }) => {

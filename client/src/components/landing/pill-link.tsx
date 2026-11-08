@@ -1,6 +1,7 @@
 import clsx from 'clsx';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
+import { ArrowShotLink, type ShotDirection } from '@/components/transition/arrow-transition';
 
 type PillVariant = 'cream' | 'cream-outline' | 'ink';
 type PillSize = 'sm' | 'md';
@@ -22,10 +23,12 @@ interface PillLinkProps {
   variant?: PillVariant;
   size?: PillSize;
   className?: string;
+  /** Shoot the link's half arrow to the destination with the arrow-shot page transition. */
+  arrowShot?: { direction: ShotDirection; caption: string };
 }
 
 /** Rounded call-to-action link. In-page anchors render a plain `<a>`; routes use `next/link`. */
-export function PillLink({ href, children, variant = 'cream', size = 'md', className }: PillLinkProps) {
+export function PillLink({ href, children, variant = 'cream', size = 'md', className, arrowShot }: PillLinkProps) {
   const classes = clsx(
     'inline-flex items-center justify-center whitespace-nowrap rounded-full font-semibold transition-colors duration-200 active:translate-y-px',
     VARIANTS[variant],
@@ -38,6 +41,14 @@ export function PillLink({ href, children, variant = 'cream', size = 'md', class
       <a href={href} className={classes}>
         {children}
       </a>
+    );
+  }
+
+  if (arrowShot) {
+    return (
+      <ArrowShotLink href={href} direction={arrowShot.direction} caption={arrowShot.caption} className={classes}>
+        {children}
+      </ArrowShotLink>
     );
   }
 

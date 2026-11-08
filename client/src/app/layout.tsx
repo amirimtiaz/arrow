@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Anton, Inter, JetBrains_Mono } from 'next/font/google';
 import Script from 'next/script';
+import { ArrowTransitionProvider } from '@/components/transition/arrow-transition';
 import './globals.css';
 
 // next/font self-hosts these at build time: no runtime font CDN.
@@ -24,7 +25,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <Script id="arrow-theme" strategy="beforeInteractive">
           {THEME_BOOTSTRAP}
         </Script>
-        {children}
+        <ArrowTransitionProvider>{children}</ArrowTransitionProvider>
       </body>
     </html>
   );

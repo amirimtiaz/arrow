@@ -2,8 +2,8 @@ import clsx from 'clsx';
 import Image from 'next/image';
 import type { CSSProperties } from 'react';
 
-/** Bundled locally (see public/images/CREDITS.md); never hotlinked. */
-const PHOTO_SRC = '/images/hero-sky.jpg';
+/** Bundled locally (see public/images/CREDITS.md); never hotlinked. The original photo with its clouds painted out. */
+const PHOTO_SRC = '/images/hero-sky-clear.jpg';
 
 /** Multiplies a blue wash into the upper frame so the sky reads saturated without recoloring the people. */
 const SKY_TINT: CSSProperties = {

@@ -152,6 +152,94 @@ body {
   }
 }
 
+/* Speed lines on the arrow-shot transit screen (components/transition/arrow-transition.tsx). */
+@keyframes arrow-streak {
+  from {
+    transform: translateX(110vw);
+  }
+  to {
+    transform: translateX(-40vw);
+  }
+}
+
+/* Header nav clouds bob gently, each on its own beat (site-header.tsx sets the timing). */
+@keyframes cloud-float {
+  0%,
+  100% {
+    transform: none;
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+.nav-cloud {
+  animation: cloud-float 6.5s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-cloud {
+    animation: none;
+  }
+}
+
+/*
+ * Landing "problem" archery blocks (components/landing/archery-blocks.tsx). The script arms the row while it is
+ * below the fold, then sets data-archery="hit" when it scrolls in: arrows fly in one by one (--i staggers them) and
+ * each face thuds as its arrow lands.
+ */
+@keyframes archery-hit {
+  0% {
+    transform: translateX(-46px);
+    opacity: 0;
+    animation-timing-function: cubic-bezier(0.25, 0.7, 0.4, 1);
+  }
+  15% {
+    opacity: 1;
+  }
+  52% {
+    transform: none;
+    animation-timing-function: ease-out;
+  }
+  64% {
+    transform: rotate(5deg);
+  }
+  76% {
+    transform: rotate(-3deg);
+  }
+  88% {
+    transform: rotate(1.2deg);
+  }
+  100% {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+@keyframes archery-thud {
+  0%,
+  100% {
+    transform: none;
+  }
+  35% {
+    transform: scale(0.965) translateX(1.5px);
+  }
+}
+
+[data-archery='armed'] .archery-arrow {
+  opacity: 0;
+}
+
+[data-archery='hit'] .archery-arrow {
+  animation: archery-hit 900ms both;
+  animation-delay: calc(var(--i, 0) * 170ms);
+}
+
+[data-archery='hit'] .archery-face {
+  animation: archery-thud 340ms ease-out both;
+  animation-delay: calc(var(--i, 0) * 170ms + 460ms);
+}
+
 .disruption-marker {
   position: relative;
   display: grid;
